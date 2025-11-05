@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:synology-downloadstation-cli}",
+            "name": "Debug synology-ds",
+            "target": "synology-ds",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug synology-ds"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:synology-downloadstation-cli}",
+            "name": "Release synology-ds",
+            "target": "synology-ds",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release synology-ds"
+        }
+    ]
+}
