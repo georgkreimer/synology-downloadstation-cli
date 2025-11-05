@@ -1,0 +1,15 @@
+.build/
+.swiftpm/
+Package.resolved
+
+DerivedData/
+*.xcworkspace
+*.xcodeproj/
+*.xcuserstate
+xcuserdata/
+
+.DS_Store
+
+*.private.env.json
+
+synology-ds
