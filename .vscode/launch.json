@@ -1,24 +1,24 @@
 {
     "configurations": [
         {
-            "type": "swift",
+            "type": "pwa-node",
             "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:synology-downloadstation-cli}",
-            "name": "Debug synology-ds",
-            "target": "synology-ds",
-            "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug synology-ds"
+            "name": "Run synology-ds (dev)",
+            "runtimeExecutable": "bun",
+            "runtimeArgs": [
+                "run",
+                "src/index.tsx"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
         },
         {
-            "type": "swift",
+            "type": "pwa-node",
             "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:synology-downloadstation-cli}",
-            "name": "Release synology-ds",
-            "target": "synology-ds",
-            "configuration": "release",
-            "preLaunchTask": "swift: Build Release synology-ds"
+            "name": "Run synology-ds (built)",
+            "program": "${workspaceFolder}/dist/index.js",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
         }
     ]
 }

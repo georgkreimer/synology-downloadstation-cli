@@ -1,15 +1,19 @@
-.build/
-.swiftpm/
-Package.resolved
+# Node/TypeScript build artifacts
+node_modules
+dist
+.turbo
+.cache
 
-DerivedData/
-*.xcworkspace
-*.xcodeproj/
-*.xcuserstate
-xcuserdata/
-
+# Logs & temporary files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 .DS_Store
 
-*.private.env.json
+# Local environment overrides
+.env
+.env.*
 
-synology-ds
+# Swift build leftovers from previous iteration
+.build
