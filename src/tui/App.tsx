@@ -1,9 +1,10 @@
 /** @jsxImportSource @opentui/react */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { TextareaRenderable } from "@opentui/core"
 import type { Task } from "../types/synology"
 import { SynologyClient, SynologyRequestError } from "../services/SynologyClient"
 import { formatBytes, formatPercent, formatSpeed, deriveProgress } from "../utils/formatting"
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import stripAnsi from "strip-ansi"
 
 interface AppProps {
@@ -70,12 +71,11 @@ export function App({
   const [lastRefresh, setLastRefresh] = useState<Date | null>(initialTasks ? new Date() : null)
   const [loading, setLoading] = useState(!initialTasks)
   const [showCreatePrompt, setShowCreatePrompt] = useState(false)
-  const [newTaskUrl, setNewTaskUrl] = useState("")
+  const [textareaKey, setTextareaKey] = useState(0)
   const [busy, setBusy] = useState(false)
 
   const { width, height } = useTerminalDimensions()
-  const renderer = useRenderer()
-  const promptActiveRef = useRef(showCreatePrompt)
+  const textareaRef = useRef<TextareaRenderable | null>(null)
   const defaultDestinationRef = useRef<string | undefined>(
     initialDestination ??
       initialTasks?.map((task) => task.additional?.detail?.destination).find((value): value is string => Boolean(value)),
@@ -85,9 +85,6 @@ export function App({
       defaultDestinationRef.current = initialDestination
     }
   }, [initialDestination])
-  useEffect(() => {
-    promptActiveRef.current = showCreatePrompt
-  }, [showCreatePrompt])
   const viewportHeight = Math.max(height - 2, 16)
 
   const columnWidths = useMemo<ColumnWidths>(() => {
@@ -202,27 +199,6 @@ export function App({
     return () => clearInterval(timer)
   }, [busy, loadTasks, showCreatePrompt])
 
-  useEffect(() => {
-    const keyHandler = (renderer as unknown as { _keyHandler?: { on: (event: string, handler: (payload: any) => void) => void; off: (event: string, handler: (payload: any) => void) => void } })?._keyHandler
-    if (!keyHandler?.on || !keyHandler?.off) {
-      return
-    }
-    const handlePaste = (event: { text: string; preventDefault?: () => void }) => {
-      if (!promptActiveRef.current) {
-        return
-      }
-      const sanitized = stripAnsi(event.text)
-        .replace(/\u001B\[200~|\u001B\[201~/g, "")
-        .replace(/[\u0000-\u001F\u007F]/g, "")
-      setNewTaskUrl((prev) => `${prev}${sanitized}`)
-      event.preventDefault?.()
-    }
-    keyHandler.on("paste", handlePaste)
-    return () => {
-      keyHandler.off("paste", handlePaste)
-    }
-  }, [renderer])
-
   const selectionClamped = useMemo(
     () => (tasks.length === 0 ? -1 : Math.min(Math.max(selectedIndex, 0), tasks.length - 1)),
     [selectedIndex, tasks.length],
@@ -288,34 +264,34 @@ export function App({
   }, [client, performAction])
 
   const handleCreate = useCallback(async () => {
-    const trimmedUrl = newTaskUrl.trim()
-    if (!trimmedUrl) {
-      setError("Provide a URL to create a task.")
+    const urls = splitUrls(getNewTaskInput())
+    if (urls.length === 0) {
+      setError("Provide at least one URL.")
       return
     }
     const destination = defaultDestinationRef.current
     setBusy(true)
     try {
-      await client.createTaskFromUrl(trimmedUrl, destination)
+      await client.createTasksFromUrls(urls, destination)
       if (!defaultDestinationRef.current && destination) {
         defaultDestinationRef.current = destination
         onDestinationChange?.(destination)
       }
-      setSuccess("Task created.")
+      setSuccess(urls.length > 1 ? `Created ${urls.length} tasks.` : "Task created.")
       setShowCreatePrompt(false)
-      setNewTaskUrl("")
+      resetNewTaskInput()
       await loadTasks()
     } catch (error) {
       if (error instanceof SynologyRequestError && error.code === 119) {
         await refreshSession()
-        await client.createTaskFromUrl(trimmedUrl, destination)
+        await client.createTasksFromUrls(urls, destination)
         if (!defaultDestinationRef.current && destination) {
           defaultDestinationRef.current = destination
           onDestinationChange?.(destination)
         }
-        setSuccess("Task created.")
+        setSuccess(urls.length > 1 ? `Created ${urls.length} tasks.` : "Task created.")
         setShowCreatePrompt(false)
-        setNewTaskUrl("")
+        resetNewTaskInput()
         await loadTasks()
         return
       }
@@ -323,7 +299,7 @@ export function App({
     } finally {
       setBusy(false)
     }
-  }, [client, loadTasks, newTaskUrl, onDestinationChange, refreshSession, setError, setSuccess])
+  }, [client, loadTasks, onDestinationChange, refreshSession, setError, setSuccess])
 
   useKeyboard((key) => {
     if (key.name === "c" && key.ctrl) {
@@ -332,7 +308,9 @@ export function App({
     if (showCreatePrompt) {
       if (key.name === "escape") {
         setShowCreatePrompt(false)
-        setNewTaskUrl("")
+        resetNewTaskInput()
+      } else if (key.name === "return" && (key.ctrl || key.meta || key.option)) {
+        void handleCreate()
       }
       return
     }
@@ -356,8 +334,8 @@ export function App({
         void loadTasks(true)
         break
       case "n":
+        resetNewTaskInput()
         setShowCreatePrompt(true)
-        setNewTaskUrl("")
         break
       case "q":
         process.exit(0)
@@ -378,6 +356,10 @@ export function App({
     "███████║   ██║   ██║ ╚████║╚██████╔╝███████╗╚██████╔╝╚██████╔╝  ██║       ██████╔╝███████║",
     "╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝   ╚═╝       ╚═════╝ ╚══════╝",
   ]
+  const getNewTaskInput = () => textareaRef.current?.plainText ?? ""
+  const resetNewTaskInput = () => {
+    setTextareaKey((key) => key + 1)
+  }
 
   return (
     <box flexDirection="column" style={{ padding: 1, gap: 1, height: viewportHeight, minHeight: height }}>
@@ -392,6 +374,11 @@ export function App({
         <box flexDirection="column" alignItems="flex-end" style={{ gap: 0 }}>
           <text fg="#cdd6f4">{headerText}</text>
           <text>{lastRefreshText}</text>
+          {status && (
+            <text style={{ fg: status.tone === "error" ? "red" : status.tone === "success" ? "green" : "#999999" }}>
+              {status.text}
+            </text>
+          )}
         </box>
       </box>
 
@@ -425,27 +412,21 @@ export function App({
       </box>
 
       {showCreatePrompt && (
-        <box flexDirection="column" style={{ border: true, padding: 1, gap: 1 }}>
-          <text>Enter download URL:</text>
-          <input
-            placeholder="https://example.com/file.iso"
-            value={newTaskUrl}
-            onInput={setNewTaskUrl}
-            onSubmit={handleCreate}
-            focused
-          />
-          <text style={{ fg: "#999999" }}>Press Enter to create or Esc to cancel.</text>
-        </box>
+      <box flexDirection="column" style={{ border: true, padding: 1, gap: 1, maxHeight: 14 }}>
+        <text>Enter download URL(s):</text>
+        <textarea
+          key={textareaKey}
+          ref={textareaRef}
+          placeholder={"https://example.com/file.iso"}
+          wrapMode="word"
+          style={{ minHeight: 6, maxHeight: 10 }}
+          focused
+        />
+          <text style={{ fg: "#999999" }}>Press Option+Enter to create or Esc to cancel.</text>
+      </box>
       )}
 
-      <box flexDirection="column" style={{ marginTop: "auto", gap: 0 }}>
-        <text>{instructions}</text>
-        {status && (
-          <text style={{ fg: status.tone === "error" ? "red" : status.tone === "success" ? "green" : "#999999" }}>
-            {status.text}
-          </text>
-        )}
-      </box>
+      <text style={{ marginTop: "auto" }}>{instructions}</text>
     </box>
   )
 }
@@ -557,4 +538,15 @@ function getStatusColor(status: Task["status"]): string {
     default:
       return "#cdd6f4"
   }
+}
+
+function splitUrls(input: string): string[] {
+  return sanitizeInput(input)
+    .split(/\s+/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+}
+
+function sanitizeInput(value: string): string {
+  return stripAnsi(value).replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
 }

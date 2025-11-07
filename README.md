@@ -106,6 +106,7 @@ Environment variables such as `SYNOLOGY_URL`, `SYNOLOGY_OP_ITEM`, etc., can be a
 - `c` — clear all completed tasks  
 - `r` — manual refresh (auto refresh already runs every ~1 s)  
 - `q` — quit the TUI
+- Paste multiple URLs separated by whitespace/newlines into the new-task prompt and press `Option+Enter` to queue them all at once.
 
 Paste support accepts bracketed paste sequences (cmd+V) and strips ANSI/control characters before inserting into the URL prompt.
 

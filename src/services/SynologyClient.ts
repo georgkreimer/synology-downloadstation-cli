@@ -116,9 +116,21 @@ export class SynologyClient {
     )
   }
 
+  async createTasksFromUrls(urls: string[], destination?: string) {
+    const normalized = urls
+      .map((candidate) => candidate.trim())
+      .filter((candidate) => candidate.length > 0)
+    if (normalized.length === 0) {
+      throw new Error("Provide at least one URL.")
+    }
+    for (const url of normalized) {
+      await this.createTaskFromUrl(url, destination)
+    }
+  }
+
   async createTaskFromUrl(url: string, destination?: string) {
-    if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("magnet:")) {
-      throw new Error("URL must start with http://, https://, or magnet:.")
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      throw new Error("URL must start with http:// or https://.")
     }
     const params: Record<string, string> = {
       api: "SYNO.DownloadStation2.Task",
