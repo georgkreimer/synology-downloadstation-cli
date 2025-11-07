@@ -367,19 +367,36 @@ export function App({
     }
   })
 
-  const headerText = `Synology Download Station — Connected to ${host} as ${username}`
+  const headerText = `Connected to ${host} as ${username}`
   const lastRefreshText = lastRefresh ? `Last refresh: ${lastRefresh.toLocaleTimeString()}` : "Fetching tasks…"
   const instructions = "Keys: ↑/↓ move · space pause/resume · n new task · d delete · c clear finished · r refresh · q quit"
+  const banner = [
+    "███████╗██╗   ██╗███╗   ██╗ ██████╗ ██╗      ██████╗  ██████╗██╗   ██╗    ██████╗ ███████╗",
+    "██╔════╝╚██╗ ██╔╝████╗  ██║██╔═══██╗██║     ██╔═══██╗██╔════╝╚██╗ ██╔╝    ██╔══██╗██╔════╝",
+    "███████╗ ╚████╔╝ ██╔██╗ ██║██║   ██║██║     ██║   ██║██║  ███╗╚████╔╝     ██║  ██║███████╗",
+    "╚════██║  ╚██╔╝  ██║╚██╗██║██║   ██║██║     ██║   ██║██║   ██║ ╚██╔╝      ██║  ██║╚════██║",
+    "███████║   ██║   ██║ ╚████║╚██████╔╝███████╗╚██████╔╝╚██████╔╝  ██║       ██████╔╝███████║",
+    "╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝   ╚═╝       ╚═════╝ ╚══════╝",
+  ]
 
   return (
-    <box flexDirection="column" style={{ padding: 1, gap: 1, height: viewportHeight }}>
-      <box flexDirection="row" justifyContent="space-between">
-        <text>{headerText}</text>
-        <text>{lastRefreshText}</text>
+    <box flexDirection="column" style={{ padding: 1, gap: 1, height: viewportHeight, minHeight: height }}>
+      <box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
+        <box flexDirection="column" style={{ gap: 0 }}>
+          {banner.map((line, index) => (
+            <text key={`banner-${index}`} fg="#8be9fd">
+              {line}
+            </text>
+          ))}
+        </box>
+        <box flexDirection="column" alignItems="flex-end" style={{ gap: 0 }}>
+          <text fg="#cdd6f4">{headerText}</text>
+          <text>{lastRefreshText}</text>
+        </box>
       </box>
 
-      <box flexDirection="column" style={{ flexGrow: 1, gap: 1 }}>
-        <box flexDirection="column" style={{ border: true, padding: 1, minHeight: 12, flexGrow: 1 }}>
+      <box flexDirection="column" style={{ flexGrow: 1, gap: 1, minHeight: 0 }}>
+        <box flexDirection="column" style={{ border: true, padding: 1, flexGrow: 1, minHeight: 0 }}>
           <text>
             <strong fg="#88c0d0">{formatHeader(columnWidths, tableWidth)}</strong>
           </text>
@@ -421,15 +438,13 @@ export function App({
         </box>
       )}
 
-      <box flexDirection="row" style={{ marginTop: "auto", gap: 2, justifyContent: "space-between" }}>
+      <box flexDirection="column" style={{ marginTop: "auto", gap: 0 }}>
         <text>{instructions}</text>
-        <box flexDirection="row" justifyContent="flex-end" style={{ flexGrow: 1 }}>
-          {status && (
-            <text style={{ fg: status.tone === "error" ? "red" : status.tone === "success" ? "green" : "#999999" }}>
-              {status.text}
-            </text>
-          )}
-        </box>
+        {status && (
+          <text style={{ fg: status.tone === "error" ? "red" : status.tone === "success" ? "green" : "#999999" }}>
+            {status.text}
+          </text>
+        )}
       </box>
     </box>
   )
