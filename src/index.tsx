@@ -107,10 +107,10 @@ async function main() {
       throw new Error("1Password item not provided.")
     }
     const creds = fetchOnePasswordCredentials(opItem, opVault)
-    credentialCache = { username: creds.username, password: creds.password }
     displayUsername = creds.username
     const otp = fetchOnePasswordTotp(opItem, opVault) ?? creds.totp
     await client.login(creds.username, creds.password, otp)
+    credentialCache = { username: creds.username, password: "" }
     if (client.sessionId) {
       mergeSession({ sid: client.sessionId, username: creds.username })
     }
@@ -119,11 +119,11 @@ async function main() {
   async function authenticateManually() {
     const username = await prompt("Username: ", { defaultValue: displayUsername })
     const password = await promptHidden("Password: ")
-    credentialCache = { username, password }
     displayUsername = username
     const otpInput = await prompt("One-time code (press Enter to skip): ", { allowEmpty: true })
     const otp = otpInput?.trim() ? otpInput.trim() : undefined
     await client.login(username, password, otp)
+    credentialCache = { username, password: "" }
     if (client.sessionId) {
       mergeSession({ sid: client.sessionId, username })
     }
@@ -160,14 +160,6 @@ async function main() {
 
   await ensureSessionValid()
 
-  const refreshSession = async () => {
-    if (usesOnePassword) {
-      await authenticateWithOnePassword()
-    } else {
-      await authenticateManually()
-    }
-  }
-
   const handleDestinationChange = (destination: string) => {
     mergeSession({ destination })
   }
@@ -178,7 +170,7 @@ async function main() {
       client={client}
       host={host}
       username={displayUsername ?? credentialCache?.username ?? "unknown"}
-      refreshSession={refreshSession}
+      refreshSession={authenticateInteractive}
       initialTasks={initialTasks}
       initialDestination={cachedSession?.destination}
       onDestinationChange={handleDestinationChange}

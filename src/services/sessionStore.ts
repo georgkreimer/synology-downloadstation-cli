@@ -10,6 +10,7 @@ export interface SessionState {
 type SessionStoreData = Record<string, SessionState>
 
 const SESSION_FILE = getConfigPath("sessions.json")
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 function loadAll(): SessionStoreData {
   return readJSONFile<SessionStoreData>(SESSION_FILE) ?? {}
@@ -23,21 +24,23 @@ function keyFor(host: string): string {
   return host.trim().replace(/\/+$/, "").toLowerCase()
 }
 
-export function loadSession(host: string): SessionState | undefined {
-  const store = loadAll()
-  return store[keyFor(host)]
+function isExpired(session: SessionState): boolean {
+  if (!session.updatedAt) return false // legacy sessions without updatedAt are not expired
+  return Date.now() - new Date(session.updatedAt).getTime() > SESSION_TTL_MS
 }
 
-export function saveSession(host: string, session: SessionState) {
+export function loadSession(host: string): SessionState | undefined {
   const store = loadAll()
-  store[keyFor(host)] = session
-  persist(store)
+  const session = store[keyFor(host)]
+  if (!session) return undefined
+  if (isExpired(session)) return undefined
+  return session
 }
 
 export function updateSession(host: string, partial: SessionState) {
   const store = loadAll()
   const key = keyFor(host)
-  store[key] = { ...(store[key] ?? {}), ...partial }
+  store[key] = { ...(store[key] ?? {}), ...partial, updatedAt: new Date().toISOString() }
   persist(store)
   return store[key]
 }

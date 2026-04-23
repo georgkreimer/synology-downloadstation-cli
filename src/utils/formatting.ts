@@ -1,5 +1,6 @@
 export function formatBytes(bytes?: number): string {
-  if (!bytes || bytes <= 0) return "-"
+  if (bytes === undefined || bytes < 0) return "-"
+  if (bytes === 0) return "0 B"
   const units = ["B", "KB", "MB", "GB", "TB"]
   let size = bytes
   let unitIndex = 0
@@ -18,6 +19,16 @@ export function formatSpeed(bytesPerSecond?: number): string {
 export function formatPercent(percent?: number): string {
   if (percent === undefined || Number.isNaN(percent)) return "-"
   return `${percent.toFixed(0)}%`
+}
+
+export function formatProgressBar(percent: number | undefined, width: number): string {
+  if (percent === undefined || Number.isNaN(percent)) return "-".padEnd(width)
+  // Fixed-width percentage: always 4 chars ("  0%", " 50%", "100%") + 1 space separator
+  const pctText = `${Math.round(percent)}%`.padStart(4)
+  const barWidth = Math.max(width - 5, 2) // 4 chars pct + 1 space
+  const filled = Math.round((percent / 100) * barWidth)
+  const empty = barWidth - filled
+  return `${"\u2588".repeat(filled)}${"\u2591".repeat(empty)} ${pctText}`
 }
 
 export function deriveProgress(task: { additional?: { transfer?: { size_downloaded?: number; speed_download?: number } }; size?: number }): number | undefined {

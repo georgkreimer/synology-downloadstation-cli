@@ -96,4 +96,35 @@ describe("SynologyClient", () => {
       SynologyRequestError,
     )
   })
+
+  test("rejects unexpected response format", async () => {
+    const client = new SynologyClient({
+      host: "https://nas.local:5001",
+      allowInsecure: false,
+      timeoutMs: 5000,
+    })
+    client.sessionId = "abc123"
+    setMockFetch(async () =>
+      new Response(JSON.stringify("not an object"), { status: 200 }),
+    )
+
+    await expect(client.createTaskFromUrl("https://example.com/file.iso", undefined)).rejects.toThrow(
+      "Unexpected API response format",
+    )
+  })
+
+  test("clears session on HTTP 401", async () => {
+    const client = new SynologyClient({
+      host: "https://nas.local:5001",
+      allowInsecure: false,
+      timeoutMs: 5000,
+    })
+    client.sessionId = "abc123"
+    setMockFetch(async () => new Response("Unauthorized", { status: 401 }))
+
+    await expect(client.createTaskFromUrl("https://example.com/file.iso", undefined)).rejects.toThrow(
+      "Session expired",
+    )
+    expect(client.sessionId).toBeUndefined()
+  })
 })

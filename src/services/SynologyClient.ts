@@ -1,4 +1,3 @@
-import { URL } from "node:url"
 import type { AuthData, SynologyResponse, Task, TasksResponse, TaskOperation } from "../types/synology"
 
 export class SynologyRequestError extends Error {
@@ -20,12 +19,15 @@ export class SynologyClient {
 
   private readonly timeout: number
 
+  private readonly allowInsecure: boolean
+
+  private readonly endpointUrl: string
+
   constructor(private readonly options: SynologyClientOptions) {
     this.host = options.host.replace(/\/+$/, "")
     this.timeout = Math.max(options.timeoutMs ?? 10_000, 1)
-    if (options.allowInsecure) {
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
-    }
+    this.allowInsecure = options.allowInsecure ?? false
+    this.endpointUrl = new URL("/webapi/entry.cgi", this.host).toString()
   }
 
   get sessionId(): string | undefined {
@@ -55,6 +57,19 @@ export class SynologyClient {
       throw new SynologyRequestError("Authentication failed", code)
     }
     this.sid = response.data.sid
+  }
+
+  async getDefaultDestination(): Promise<string | undefined> {
+    try {
+      const response = await this.post<{ default_destination: string }>({
+        api: "SYNO.DownloadStation2.Settings.Location",
+        version: "1",
+        method: "get",
+      })
+      return response.data?.default_destination || undefined
+    } catch {
+      return undefined
+    }
   }
 
   async listTasks(): Promise<Task[]> {
@@ -161,6 +176,7 @@ export class SynologyClient {
         method: "POST",
         body: payload,
         signal: controller.signal,
+        ...(this.allowInsecure ? { tls: { rejectUnauthorized: false } } : {}),
       })
       if (!response.ok) {
         if (response.status === 401) {
@@ -170,7 +186,11 @@ export class SynologyClient {
         const body = await response.text()
         throw new SynologyRequestError(`HTTP ${response.status}: ${body}`, response.status)
       }
-      return (await response.json()) as SynologyResponse<T>
+      const json: unknown = await response.json()
+      if (json === null || typeof json !== "object" || !("success" in json)) {
+        throw new SynologyRequestError("Unexpected API response format")
+      }
+      return json as SynologyResponse<T>
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         throw new Error("Request timed out")
@@ -182,7 +202,7 @@ export class SynologyClient {
   }
 
   private get endpoint() {
-    return new URL("/webapi/entry.cgi", this.host).toString()
+    return this.endpointUrl
   }
 
   private parseData<T>(response: SynologyResponse<T>, context: string): T {

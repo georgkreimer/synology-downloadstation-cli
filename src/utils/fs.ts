@@ -19,7 +19,9 @@ export function readJSONFile<T>(filePath: string): T | undefined {
   if (!fs.existsSync(filePath)) return undefined
   try {
     const raw = fs.readFileSync(filePath, "utf8")
-    return JSON.parse(raw) as T
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== "object") return undefined
+    return parsed as T
   } catch {
     return undefined
   }

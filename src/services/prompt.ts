@@ -27,20 +27,20 @@ export async function prompt(question: string, options?: PromptOptions): Promise
 }
 
 export async function promptHidden(question: string): Promise<string> {
-  const mutedOutput = new Proxy(output, {
+  const silentOutput = new Proxy(output, {
     get(target, prop) {
       if (prop === "write") {
-        return function writeMuted(this: typeof target, string: string) {
-          if (string.includes("\n")) {
-            return target.write.call(this, string)
+        return function writeSilent(this: typeof target, data: string) {
+          if (data.includes("\n")) {
+            return target.write.call(this, data)
           }
-          return target.write.call(this, "*".repeat(string.length))
+          return true
         }
       }
       return Reflect.get(target, prop)
     },
   })
-  const rl = readline.createInterface({ input, output: mutedOutput as typeof output })
+  const rl = readline.createInterface({ input, output: silentOutput as typeof output })
   try {
     const answer = await rl.question(question)
     output.write("\n")
