@@ -5,11 +5,9 @@ import { createRoot } from "@opentui/react"
 import { Command } from "commander"
 import stripAnsi from "strip-ansi"
 import { App } from "./tui/App"
-import { SynologyClient, SynologyRequestError } from "./services/SynologyClient"
 import { loadConfig, saveConfig } from "./services/configStore"
-import { deleteSession, loadSession, updateSession, type SessionState } from "./services/sessionStore"
-import { fetchOnePasswordCredentials, fetchOnePasswordTotp } from "./services/onePassword"
-import { prompt, promptHidden } from "./services/prompt"
+import { authenticate } from "./services/auth"
+import { prompt } from "./services/prompt"
 
 interface CLIOptions {
   host?: string
@@ -18,11 +16,6 @@ interface CLIOptions {
   opVault?: string
   timeout?: string
   noSessionCache?: boolean
-}
-
-interface Credentials {
-  username: string
-  password: string
 }
 
 function ensureBunPolyfills() {
@@ -35,19 +28,7 @@ function ensureBunPolyfills() {
   }
 }
 
-async function main() {
-  ensureBunPolyfills()
-  const program = new Command()
-    .name("synology-ds")
-    .description("Synology Download Station TUI powered by Bun + OpenTUI")
-    .option("--host <url>", "Synology URL, e.g. https://nas.local:5001")
-    .option("--insecure", "Allow self-signed TLS certificates")
-    .option("--op-item <item>", "1Password item name or ID to load credentials from")
-    .option("--op-vault <vault>", "1Password vault name or ID")
-    .option("--timeout <ms>", "HTTP timeout in milliseconds (default 10000)")
-    .option("--no-session-cache", "Disable session caching to disk")
-
-  const options = program.parse(process.argv).opts<CLIOptions>()
+export async function resolveConfig(options: CLIOptions) {
   const storedConfig = loadConfig()
 
   let host = options.host ?? storedConfig.host ?? ""
@@ -84,96 +65,39 @@ async function main() {
     sessionCache: useSessionCache,
   })
 
-  const client = new SynologyClient({ host, allowInsecure, timeoutMs })
-  let cachedSession = useSessionCache ? loadSession(host) : undefined
-  if (cachedSession?.sid) {
-    client.sessionId = cachedSession.sid
-  }
+  return { host, allowInsecure, opItem, opVault, useSessionCache, timeoutMs }
+}
 
-  const mergeSession = (partial: SessionState) => {
-    cachedSession = { ...(cachedSession ?? {}), ...partial }
-    if (useSessionCache) {
-      updateSession(host, cachedSession)
-    }
-  }
+async function main() {
+  ensureBunPolyfills()
+  const program = new Command()
+    .name("synology-ds")
+    .description("Synology Download Station TUI powered by Bun + OpenTUI")
+    .option("--host <url>", "Synology URL, e.g. https://nas.local:5001")
+    .option("--insecure", "Allow self-signed TLS certificates")
+    .option("--op-item <item>", "1Password item name or ID to load credentials from")
+    .option("--op-vault <vault>", "1Password vault name or ID")
+    .option("--timeout <ms>", "HTTP timeout in milliseconds (default 10000)")
+    .option("--no-session-cache", "Disable session caching to disk")
 
-  let credentialCache: Credentials | undefined
-  let displayUsername: string | undefined = cachedSession?.username
-  const usesOnePassword = Boolean(opItem)
-  let initialTasks: Awaited<ReturnType<SynologyClient["listTasks"]>> | undefined
+  const options = program.parse(process.argv).opts<CLIOptions>()
+  const config = await resolveConfig(options)
 
-  async function authenticateWithOnePassword() {
-    if (!opItem) {
-      throw new Error("1Password item not provided.")
-    }
-    const creds = fetchOnePasswordCredentials(opItem, opVault)
-    displayUsername = creds.username
-    const otp = fetchOnePasswordTotp(opItem, opVault) ?? creds.totp
-    await client.login(creds.username, creds.password, otp)
-    credentialCache = { username: creds.username, password: "" }
-    if (client.sessionId) {
-      mergeSession({ sid: client.sessionId, username: creds.username })
-    }
-  }
-
-  async function authenticateManually() {
-    const username = await prompt("Username: ", { defaultValue: displayUsername })
-    const password = await promptHidden("Password: ")
-    displayUsername = username
-    const otpInput = await prompt("One-time code (press Enter to skip): ", { allowEmpty: true })
-    const otp = otpInput?.trim() ? otpInput.trim() : undefined
-    await client.login(username, password, otp)
-    credentialCache = { username, password: "" }
-    if (client.sessionId) {
-      mergeSession({ sid: client.sessionId, username })
-    }
-  }
-
-  async function authenticateInteractive() {
-    if (usesOnePassword) {
-      await authenticateWithOnePassword()
-    } else {
-      await authenticateManually()
-    }
-  }
-
-  async function ensureSessionValid() {
-    if (client.sessionId) {
-      try {
-        initialTasks = await client.listTasks()
-        return
-      } catch (error) {
-        if (error instanceof SynologyRequestError && error.code === 119) {
-          client.sessionId = undefined
-          if (useSessionCache) {
-            deleteSession(host)
-          }
-          cachedSession = undefined
-        } else {
-          throw error
-        }
-      }
-    }
-    await authenticateInteractive()
-    initialTasks = await client.listTasks()
-  }
-
-  await ensureSessionValid()
-
-  const handleDestinationChange = (destination: string) => {
-    mergeSession({ destination })
-  }
+  const auth = await authenticate({
+    ...config,
+    manualFallback: true,
+  })
 
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
   createRoot(renderer).render(
     <App
-      client={client}
-      host={host}
-      username={displayUsername ?? credentialCache?.username ?? "unknown"}
-      refreshSession={authenticateInteractive}
-      initialTasks={initialTasks}
-      initialDestination={cachedSession?.destination}
-      onDestinationChange={handleDestinationChange}
+      client={auth.client}
+      host={config.host}
+      username={auth.username}
+      refreshSession={auth.refreshSession}
+      initialTasks={auth.initialTasks}
+      initialDestination={auth.cachedDestination}
+      onDestinationChange={auth.updateDestination}
     />,
   )
 }
