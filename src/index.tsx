@@ -7,7 +7,10 @@ import stripAnsi from "strip-ansi"
 import { App } from "./tui/App"
 import { loadConfig, saveConfig } from "./services/configStore"
 import { authenticate } from "./services/auth"
+import { startRelay } from "./services/relay"
 import { prompt } from "./services/prompt"
+
+const DEFAULT_RELAY_PORT = 19786
 
 interface CLIOptions {
   host?: string
@@ -68,19 +71,8 @@ export async function resolveConfig(options: CLIOptions) {
   return { host, allowInsecure, opItem, opVault, useSessionCache, timeoutMs }
 }
 
-async function main() {
+async function runTui(options: CLIOptions) {
   ensureBunPolyfills()
-  const program = new Command()
-    .name("synology-ds")
-    .description("Synology Download Station TUI powered by Bun + OpenTUI")
-    .option("--host <url>", "Synology URL, e.g. https://nas.local:5001")
-    .option("--insecure", "Allow self-signed TLS certificates")
-    .option("--op-item <item>", "1Password item name or ID to load credentials from")
-    .option("--op-vault <vault>", "1Password vault name or ID")
-    .option("--timeout <ms>", "HTTP timeout in milliseconds (default 10000)")
-    .option("--no-session-cache", "Disable session caching to disk")
-
-  const options = program.parse(process.argv).opts<CLIOptions>()
   const config = await resolveConfig(options)
 
   const auth = await authenticate({
@@ -100,6 +92,72 @@ async function main() {
       onDestinationChange={auth.updateDestination}
     />,
   )
+}
+
+async function runServe(options: CLIOptions, port: number) {
+  const config = await resolveConfig(options)
+
+  if (!config.opItem) {
+    const { loadSession } = await import("./services/sessionStore")
+    const session = config.useSessionCache ? loadSession(config.host) : undefined
+    if (!session?.sid) {
+      console.error(
+        "1Password required for relay mode.\n" +
+        "Configure with: synology-ds --op-item <item>\n" +
+        "Or authenticate via the TUI first to cache a session.",
+      )
+      process.exit(1)
+    }
+  }
+
+  const auth = await authenticate({
+    ...config,
+    manualFallback: false,
+  })
+
+  const server = startRelay({
+    client: auth.client,
+    host: config.host,
+    port,
+    refreshSession: auth.refreshSession,
+  })
+
+  console.log(`Relay listening on http://127.0.0.1:${server.port}`)
+  console.log(`Connected to ${config.host} as ${auth.username}`)
+  console.log("Press Ctrl+C to stop.")
+}
+
+async function main() {
+  const program = new Command()
+    .name("synology-ds")
+    .description("Synology Download Station TUI powered by Bun + OpenTUI")
+    .option("--host <url>", "Synology URL, e.g. https://nas.local:5001")
+    .option("--insecure", "Allow self-signed TLS certificates")
+    .option("--op-item <item>", "1Password item name or ID to load credentials from")
+    .option("--op-vault <vault>", "1Password vault name or ID")
+    .option("--timeout <ms>", "HTTP timeout in milliseconds (default 10000)")
+    .option("--no-session-cache", "Disable session caching to disk")
+
+  program
+    .command("serve")
+    .description("Start the HTTP relay for the Safari extension")
+    .option("--port <number>", "Port to listen on", String(DEFAULT_RELAY_PORT))
+    .action(async (serveOpts: { port: string }) => {
+      const parentOpts = program.opts<CLIOptions>()
+      const port = Number.parseInt(serveOpts.port, 10)
+      if (Number.isNaN(port) || port < 1 || port > 65535) {
+        console.error(`Invalid port: ${serveOpts.port}`)
+        process.exit(1)
+      }
+      await runServe(parentOpts, port)
+    })
+
+  program.action(async () => {
+    const options = program.opts<CLIOptions>()
+    await runTui(options)
+  })
+
+  await program.parseAsync(process.argv)
 }
 
 function normalizeHost(host: string): string {
