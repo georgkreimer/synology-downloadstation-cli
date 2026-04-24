@@ -1,49 +1,57 @@
 const RELAY_URL = "http://127.0.0.1:19786/add";
-const MENU_ID = "send-to-nas";
+const LINK_MENU_ID = "send-to-nas-link";
+const SELECTION_MENU_ID = "send-to-nas-selection";
+const URL_PATTERN = /(?:https?:\/\/[^\s<>"')\]]+|magnet:\?[^\s<>"')\]]+)/g;
 
-function createContextMenu() {
-  browser.contextMenus.create({
-    id: MENU_ID,
-    title: "Send to NAS",
-    contexts: ["link"],
+function createContextMenus() {
+  browser.contextMenus.removeAll(() => {
+    browser.contextMenus.create({
+      id: LINK_MENU_ID,
+      title: "Send link to NAS",
+      contexts: ["link"],
+    });
+    browser.contextMenus.create({
+      id: SELECTION_MENU_ID,
+      title: "Send selected links to NAS",
+      contexts: ["selection"],
+    });
   });
 }
 
 browser.runtime.onInstalled.addListener(() => {
-  createContextMenu();
+  createContextMenus();
 });
 
-// Safari doesn't always fire onInstalled, so also register at top level
-createContextMenu();
+createContextMenus();
 
-function showBadge(text, color, durationMs) {
-  browser.action.setBadgeText({ text });
-  browser.action.setBadgeBackgroundColor({ color });
-  setTimeout(() => {
-    browser.action.setBadgeText({ text: "" });
-  }, durationMs);
+async function sendUrl(url) {
+  const response = await fetch(RELAY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    console.error("Send to NAS failed:", url, data.error || response.statusText);
+  }
+  return data;
 }
 
 browser.contextMenus.onClicked.addListener(async (info) => {
-  if (info.menuItemId !== MENU_ID || !info.linkUrl) return;
-
   try {
-    const response = await fetch(RELAY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: info.linkUrl }),
-    });
-
-    const data = await response.json();
-
-    if (response.ok && data.ok) {
-      showBadge("✓", "#a6e3a1", 2000);
-    } else {
-      console.error("Send to NAS failed:", data.error || response.statusText);
-      showBadge("✗", "#f38ba8", 3000);
+    if (info.menuItemId === LINK_MENU_ID && info.linkUrl) {
+      await sendUrl(info.linkUrl);
+    } else if (info.menuItemId === SELECTION_MENU_ID && info.selectionText) {
+      const raw = info.selectionText.match(URL_PATTERN) || [];
+      const urls = [...new Set(raw.map((u) => u.replace(/[.,;:!?]+$/, "")))];
+      if (urls.length === 0) {
+        console.warn("Send to NAS: no URLs found in selection");
+        return;
+      }
+      console.log(`Send to NAS: sending ${urls.length} URL(s)`);
+      await Promise.allSettled(urls.map(sendUrl));
     }
   } catch (error) {
     console.error("Send to NAS relay unreachable:", error.message);
-    showBadge("✗", "#f38ba8", 3000);
   }
 });

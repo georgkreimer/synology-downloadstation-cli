@@ -3,13 +3,10 @@
   "name": "Send to NAS",
   "version": "1.0",
   "description": "Send links to Synology Download Station via right-click context menu",
-  "permissions": ["contextMenus"],
+  "permissions": ["menus", "contextMenus", "activeTab"],
   "host_permissions": ["http://127.0.0.1:*/*"],
   "background": {
     "scripts": ["background.js"]
-  },
-  "action": {
-    "default_title": "Send to NAS"
   },
   "icons": {
     "48": "icons/icon-48.png",

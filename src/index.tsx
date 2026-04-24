@@ -31,7 +31,16 @@ function ensureBunPolyfills() {
   }
 }
 
-export async function resolveConfig(options: CLIOptions) {
+interface ResolvedConfig {
+  host: string
+  allowInsecure: boolean
+  opItem?: string
+  opVault?: string
+  useSessionCache: boolean
+  timeoutMs: number
+}
+
+export async function resolveConfig(options: CLIOptions): Promise<ResolvedConfig> {
   const storedConfig = loadConfig()
 
   let host = options.host ?? storedConfig.host ?? ""
@@ -97,29 +106,18 @@ async function runTui(options: CLIOptions) {
 async function runServe(options: CLIOptions, port: number) {
   const config = await resolveConfig(options)
 
-  if (!config.opItem) {
-    const { loadSession } = await import("./services/sessionStore")
-    const session = config.useSessionCache ? loadSession(config.host) : undefined
-    if (!session?.sid) {
-      console.error(
-        "1Password required for relay mode.\n" +
-        "Configure with: synology-ds --op-item <item>\n" +
-        "Or authenticate via the TUI first to cache a session.",
-      )
-      process.exit(1)
-    }
-  }
-
   const auth = await authenticate({
     ...config,
     manualFallback: false,
   })
 
+  const { loadSession } = await import("./services/sessionStore")
   const server = startRelay({
     client: auth.client,
     host: config.host,
     port,
     refreshSession: auth.refreshSession,
+    resolveDestination: () => loadSession(config.host)?.destination,
   })
 
   console.log(`Relay listening on http://127.0.0.1:${server.port}`)

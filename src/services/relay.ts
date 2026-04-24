@@ -1,12 +1,12 @@
 import type { Server } from "bun"
 import { SynologyClient, SynologyRequestError } from "./SynologyClient"
-import { loadSession } from "./sessionStore"
 
 export interface RelayOptions {
   client: SynologyClient
   host: string
   port: number
   refreshSession: () => Promise<void>
+  resolveDestination: () => string | undefined
 }
 
 function corsHeaders(origin: string | null): Record<string, string> {
@@ -24,9 +24,6 @@ function isAllowedScheme(url: string): boolean {
   return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("magnet:")
 }
 
-function resolveDestination(host: string): string | undefined {
-  return loadSession(host)?.destination
-}
 
 async function handleAdd(
   req: Request,
@@ -58,12 +55,21 @@ async function handleAdd(
     )
   }
 
-  const destination = resolveDestination(options.host) ?? await options.client.getDefaultDestination()
+  const filename = url.startsWith("magnet:") ? undefined : url.split("/").pop()
+  const successBody = { ok: true, ...(filename ? { filename } : {}) }
+
+  async function getDestination(): Promise<string | undefined> {
+    try {
+      return options.resolveDestination() ?? await options.client.getDefaultDestination()
+    } catch {
+      return undefined
+    }
+  }
 
   try {
+    const destination = await getDestination()
     await options.client.createTaskFromUrl(url, destination)
-    const filename = url.startsWith("magnet:") ? undefined : url.split("/").pop()
-    return Response.json({ ok: true, ...(filename ? { filename } : {}) }, { headers })
+    return Response.json(successBody, { headers })
   } catch (error) {
     if (error instanceof SynologyRequestError && error.code === 119) {
       try {
@@ -77,9 +83,9 @@ async function handleAdd(
         )
       }
       try {
+        const destination = await getDestination()
         await options.client.createTaskFromUrl(url, destination)
-        const filename = url.startsWith("magnet:") ? undefined : url.split("/").pop()
-        return Response.json({ ok: true, ...(filename ? { filename } : {}) }, { headers })
+        return Response.json(successBody, { headers })
       } catch (retryError) {
         const message = retryError instanceof Error ? retryError.message : "Unknown error"
         return Response.json({ ok: false, error: message }, { status: 502, headers })

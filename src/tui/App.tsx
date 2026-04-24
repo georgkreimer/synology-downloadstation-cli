@@ -109,12 +109,15 @@ export function App({
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
   const [spinnerFrame, setSpinnerFrame] = useState(0)
+  const [sortByName, setSortByName] = useState(false)
 
   const { width, height } = useTerminalDimensions()
   const fetchingRef = useRef(false)
   const textareaRef = useRef<TextareaRenderable | null>(null)
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
   const defaultDestinationRef = useRef<string | undefined>(
     initialDestination ??
       initialTasks?.map((task) => task.additional?.detail?.destination).find((value): value is string => Boolean(value)),
@@ -136,6 +139,11 @@ export function App({
     return () => clearInterval(interval)
   }, [busy])
 
+  const sortedTasks = useMemo(() => {
+    if (!sortByName) return tasks
+    return [...tasks].sort((a, b) => a.title.localeCompare(b.title))
+  }, [tasks, sortByName])
+
   const viewportHeight = Math.max(height - 2, 16)
 
   const columnWidths = useMemo<ColumnWidths>(() => {
@@ -153,10 +161,10 @@ export function App({
 
   // Derive selected index from selectedId
   const selectedIndex = useMemo(() => {
-    if (!selectedId) return tasks.length > 0 ? 0 : -1
-    const idx = tasks.findIndex((t) => t.id === selectedId)
-    return idx >= 0 ? idx : Math.min(tasks.length - 1, 0)
-  }, [selectedId, tasks])
+    if (!selectedId) return sortedTasks.length > 0 ? 0 : -1
+    const idx = sortedTasks.findIndex((t) => t.id === selectedId)
+    return idx >= 0 ? idx : Math.min(sortedTasks.length - 1, 0)
+  }, [selectedId, sortedTasks])
 
   // Status message helpers with auto-clear
   const clearStatusTimer = useCallback(() => {
@@ -219,10 +227,10 @@ export function App({
         setTasks(list)
         setLastRefresh(new Date())
 
-        // Preserve selection by ID across refresh
-        if (selectedId && !list.some((t) => t.id === selectedId)) {
+        const currentSelectedId = selectedIdRef.current
+        if (currentSelectedId && !list.some((t) => t.id === currentSelectedId)) {
           setSelectedId(list[0]?.id ?? null)
-        } else if (!selectedId && list.length > 0) {
+        } else if (!currentSelectedId && list.length > 0) {
           setSelectedId(list[0].id)
         }
 
@@ -243,7 +251,7 @@ export function App({
         setLoading(false)
       }
     },
-    [client, onDestinationChange, selectedId, withSessionRetry, setError, setInfo],
+    [client, onDestinationChange, withSessionRetry, setError, setInfo],
   )
 
   useEffect(() => {
@@ -270,14 +278,14 @@ export function App({
 
   const handleMove = useCallback(
     (delta: number) => {
-      if (tasks.length === 0) return
+      if (sortedTasks.length === 0) return
       setExpandedTaskId(null) // collapse detail on move
-      const currentIndex = selectedId ? tasks.findIndex((t) => t.id === selectedId) : 0
+      const currentIndex = selectedId ? sortedTasks.findIndex((t) => t.id === selectedId) : 0
       const baseIndex = currentIndex >= 0 ? currentIndex : 0
-      const next = Math.max(0, Math.min(baseIndex + delta, tasks.length - 1))
-      setSelectedId(tasks[next].id)
+      const next = Math.max(0, Math.min(baseIndex + delta, sortedTasks.length - 1))
+      setSelectedId(sortedTasks[next].id)
     },
-    [tasks, selectedId],
+    [sortedTasks, selectedId],
   )
 
   const performAction = useCallback(
@@ -297,7 +305,7 @@ export function App({
     [loadTasks, withSessionRetry, selectedIndex, setError, setSuccess],
   )
 
-  const selectedTask = selectedIndex >= 0 ? tasks[selectedIndex] : undefined
+  const selectedTask = selectedIndex >= 0 ? sortedTasks[selectedIndex] : undefined
 
   const cancelConfirm = useCallback(() => {
     if (pendingConfirm) {
@@ -432,15 +440,15 @@ export function App({
         handleMove(getPageSize())
         break
       case "home":
-        if (tasks.length > 0) {
+        if (sortedTasks.length > 0) {
           setExpandedTaskId(null)
-          setSelectedId(tasks[0].id)
+          setSelectedId(sortedTasks[0].id)
         }
         break
       case "end":
-        if (tasks.length > 0) {
+        if (sortedTasks.length > 0) {
           setExpandedTaskId(null)
-          setSelectedId(tasks[tasks.length - 1].id)
+          setSelectedId(sortedTasks[sortedTasks.length - 1].id)
         }
         break
       case "return":
@@ -460,6 +468,9 @@ export function App({
       case "r":
         void loadTasks(true)
         break
+      case "s":
+        setSortByName((prev) => !prev)
+        break
       case "n":
         cancelConfirm()
         resetNewTaskInput()
@@ -478,7 +489,8 @@ export function App({
 
   const headerText = `${username}@${new URL(host).hostname}`
   const lastRefreshText = lastRefresh ? lastRefresh.toLocaleTimeString() : "…"
-  const tableTitle = tasks.length > 0 ? ` Downloads (${tasks.length}) ` : " Downloads "
+  const sortLabel = sortByName ? " ↑" : ""
+  const tableTitle = tasks.length > 0 ? ` Downloads (${tasks.length})${sortLabel} ` : " Downloads "
   const getNewTaskInput = () => textareaRef.current?.plainText ?? ""
   const resetNewTaskInput = () => {
     setTextareaKey((key) => key + 1)
@@ -524,13 +536,13 @@ export function App({
         <text fg={theme.muted} style={{ flexShrink: 0 }}>{formatHeader(columnWidths)}</text>
         <text fg={theme.border} style={{ flexShrink: 0 }}>{"─".repeat(columnWidths.total)}</text>
         {loading && <text fg={theme.muted}>Loading…</text>}
-        {!loading && tasks.length === 0 && (
+        {!loading && sortedTasks.length === 0 && (
           <box flexDirection="column" alignItems="center" justifyContent="center" style={{ flexGrow: 1 }}>
             <text fg={theme.muted}>No active downloads</text>
             <text fg={theme.emptyState}>Press <span fg={theme.keyhint.key}>n</span> to add a URL</text>
           </box>
         )}
-        {!loading && tasks.length > 0 && (
+        {!loading && sortedTasks.length > 0 && (
           <scrollbox
             scrollY
             viewportCulling
@@ -543,7 +555,7 @@ export function App({
               },
             }}
           >
-            {tasks.map((task) => {
+            {sortedTasks.map((task) => {
               const isSelected = task.id === selectedId
               const isError = task.status >= 101
               const isExpanded = expandedTaskId === task.id || isError
@@ -582,6 +594,7 @@ export function App({
           <span fg={theme.keyhint.key}>n</span><span fg={theme.keyhint.label}> new  </span>
           <span fg={theme.keyhint.key}>d</span><span fg={theme.keyhint.label}> delete  </span>
           <span fg={theme.keyhint.key}>c</span><span fg={theme.keyhint.label}> clear  </span>
+          <span fg={theme.keyhint.key}>s</span><span fg={theme.keyhint.label}> sort  </span>
           <span fg={theme.keyhint.key}>r</span><span fg={theme.keyhint.label}> refresh  </span>
           <span fg={theme.keyhint.key}>q</span><span fg={theme.keyhint.label}> quit</span>
         </text>

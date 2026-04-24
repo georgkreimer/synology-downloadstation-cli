@@ -21,6 +21,7 @@ function makeOptions(overrides: Partial<RelayOptions> = {}): RelayOptions {
     host: "https://nas.local:5001",
     port: TEST_PORT,
     refreshSession: mock(async () => {}),
+    resolveDestination: mock(() => "/volume1/downloads" as string | undefined),
     ...overrides,
   }
 }
