@@ -27,8 +27,33 @@ describe("SynologyClient", () => {
       timeoutMs: 5000,
     })
     await expect(client.createTaskFromUrl("ftp://invalid", undefined)).rejects.toThrow(
-      "URL must start with http:// or https://.",
+      "URL must start with http://, https://, or magnet:.",
     )
+    await expect(client.createTaskFromUrl("javascript:alert(1)", undefined)).rejects.toThrow(
+      "URL must start with http://, https://, or magnet:.",
+    )
+  })
+
+  test("accepts magnet URIs when creating tasks", async () => {
+    const client = new SynologyClient({
+      host: "https://nas.local:5001",
+      allowInsecure: false,
+      timeoutMs: 5000,
+    })
+    client.sessionId = "abc123"
+
+    let lastBody: string | undefined
+    setMockFetch(async (_input, init) => {
+      const body = init?.body
+      lastBody = body instanceof URLSearchParams ? body.toString() : body?.toString()
+      return new Response(JSON.stringify({ success: true, data: { listId: [], taskId: [] } }), { status: 200 })
+    })
+
+    await client.createTaskFromUrl("magnet:?xt=urn:btih:abc123def456", "/volume1/downloads")
+
+    expect(lastBody).toBeDefined()
+    const params = new URLSearchParams(lastBody)
+    expect(params.get("url")).toBe("magnet:?xt=urn:btih:abc123def456")
   })
 
   test("sends destination and SID when creating tasks", async () => {

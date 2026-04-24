@@ -144,8 +144,8 @@ export class SynologyClient {
   }
 
   async createTaskFromUrl(url: string, destination?: string) {
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      throw new Error("URL must start with http:// or https://.")
+    if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("magnet:")) {
+      throw new Error("URL must start with http://, https://, or magnet:.")
     }
     const params: Record<string, string> = {
       api: "SYNO.DownloadStation2.Task",
