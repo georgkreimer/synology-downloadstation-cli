@@ -17,3 +17,9 @@ pnpm-debug.log*
 
 # Swift build leftovers from previous iteration
 .build
+
+# Xcode (Safari extension container app)
+SendToNAS/
+*.xcodeproj/xcuserdata/
+build/
+DerivedData/
