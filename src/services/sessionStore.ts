@@ -25,7 +25,7 @@ function keyFor(host: string): string {
 }
 
 function isExpired(session: SessionState): boolean {
-  if (!session.updatedAt) return false // legacy sessions without updatedAt are not expired
+  if (!session.updatedAt) return true
   return Date.now() - new Date(session.updatedAt).getTime() > SESSION_TTL_MS
 }
 

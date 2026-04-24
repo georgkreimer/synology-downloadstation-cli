@@ -1,9 +1,10 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { startRelay, type RelayOptions } from "../relay"
 import { SynologyClient, SynologyRequestError } from "../SynologyClient"
 
 const originalFetch = globalThis.fetch
 const TEST_PORT = 19787
+const SAFARI_ORIGIN = "safari-web-extension://ABC123-DEF456"
 
 function makeMockClient() {
   return {
@@ -29,7 +30,7 @@ function makeOptions(overrides: Partial<RelayOptions> = {}): RelayOptions {
 async function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
   return originalFetch(`http://127.0.0.1:${TEST_PORT}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: { "Content-Type": "application/json", Origin: SAFARI_ORIGIN, ...headers },
     body: JSON.stringify(body),
   })
 }
@@ -52,6 +53,17 @@ describe("relay", () => {
     expect(json.ok).toBe(true)
     expect(json.filename).toBe("file.iso")
     expect((options.client.createTaskFromUrl as ReturnType<typeof mock>)).toHaveBeenCalled()
+  })
+
+  test("POST /add strips query string from filename", async () => {
+    const options = makeOptions()
+    server = startRelay(options)
+
+    const res = await post("/add", { url: "https://example.com/file.iso?token=abc&v=2" })
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json.filename).toBe("file.iso")
   })
 
   test("POST /add with magnet URI returns ok", async () => {
@@ -152,15 +164,28 @@ describe("relay", () => {
 
     const res = await originalFetch(`http://127.0.0.1:${TEST_PORT}/add`, {
       method: "OPTIONS",
-      headers: { Origin: "safari-web-extension://ABC123-DEF456" },
+      headers: { Origin: SAFARI_ORIGIN },
     })
 
     expect(res.status).toBe(204)
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("safari-web-extension://ABC123-DEF456")
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(SAFARI_ORIGIN)
     expect(res.headers.get("Access-Control-Allow-Methods")).toContain("POST")
   })
 
-  test("request without Origin header is accepted", async () => {
+  test("OPTIONS without allowed origin returns no CORS headers", async () => {
+    const options = makeOptions()
+    server = startRelay(options)
+
+    const res = await originalFetch(`http://127.0.0.1:${TEST_PORT}/add`, {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.com" },
+    })
+
+    expect(res.status).toBe(204)
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull()
+  })
+
+  test("request without Origin header returns 403", async () => {
     const options = makeOptions()
     server = startRelay(options)
 
@@ -171,8 +196,8 @@ describe("relay", () => {
     })
     const json = await res.json()
 
-    expect(res.status).toBe(200)
-    expect(json.ok).toBe(true)
+    expect(res.status).toBe(403)
+    expect(json.ok).toBe(false)
   })
 
   test("request with evil origin returns 403", async () => {
@@ -193,7 +218,6 @@ describe("relay", () => {
     server = startRelay(options)
 
     const res = await originalFetch(`http://127.0.0.1:${TEST_PORT}/add`)
-    const json = await res.json()
 
     expect(res.status).toBe(404)
   })

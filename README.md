@@ -9,6 +9,9 @@
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
+- [Global Install](#global-install)
+- [Safari Extension](#safari-extension)
+- [Serve (Headless Relay)](#serve-headless-relay)
 - [CLI Flags & Environment](#cli-flags--environment)
 - [TUI Controls](#tui-controls)
 - [Configuration & Sessions](#configuration--sessions)
@@ -30,6 +33,12 @@
 
 - **Secure by default**  
   No credentials are written to disk; only SID, username, and destination are cached. TLS verification stays enabled unless `--insecure` is explicitly passed.
+
+- **Safari "Send to NAS" extension**  
+  Right-click any link or text selection in Safari to send downloads straight to your NAS. Bulk-sends all URLs found in a selection. Supports `http(s)://` and `magnet:` URIs.
+
+- **Built-in HTTP relay**  
+  The TUI automatically starts a localhost relay on port 19786 so the Safari extension can talk to Download Station. A standalone `serve` subcommand is available for headless setups.
 
 - **Modern toolchain**  
   Bun 1.2.x runtime, TypeScript strict mode, and a single `bun run build` output (`dist/index.js`) with a baked-in `#!/usr/bin/env bun` shebang.
@@ -73,6 +82,57 @@ Settings are written to `~/.config/synology-ds/config.json`, and can be edited b
 
 ---
 
+## Global Install
+
+Build once and link globally so `synology-ds` is available everywhere:
+
+```bash
+bun run build
+bun link
+```
+
+After linking, run `synology-ds` from any terminal. The TUI and the Safari extension relay both start together — no separate processes needed.
+
+---
+
+## Safari Extension
+
+A Safari Web Extension that adds "Send link to NAS" and "Send selected links to NAS" to the right-click context menu. Links are forwarded to Download Station through the built-in localhost relay.
+
+### Setup
+
+1. Build the extension wrapper (generates a local Xcode project — not checked into git):
+   ```bash
+   xcrun safari-web-extension-converter extension/ \
+     --app-name "Send to NAS" \
+     --bundle-identifier com.synology-ds.send-to-nas \
+     --copy-resources --no-open
+   ```
+2. Open the generated Xcode project and run it (Product → Run).
+3. In **Safari → Settings → Extensions**, enable "Send to NAS".
+4. In **Safari → Settings → Extensions → Send to NAS**, grant permission for "All Websites".
+
+### Usage
+
+- **Single link:** Right-click any link → "Send link to NAS".
+- **Bulk send:** Select text containing one or more URLs, right-click → "Send selected links to NAS". All `http(s)://` and `magnet:` URIs in the selection are extracted, deduplicated, and sent.
+
+The extension requires the relay to be running (it starts automatically with the TUI, or use `synology-ds serve` for headless mode). The extension connects to port **19786** — this is hardcoded in the extension and must match the relay port.
+
+---
+
+## Serve (Headless Relay)
+
+Run the relay without the TUI — useful for headless setups or when you only need the Safari extension:
+
+```bash
+synology-ds serve --port 19786
+```
+
+The relay listens on `127.0.0.1` only. Session re-authentication happens automatically when sessions expire.
+
+---
+
 ## CLI Flags & Environment
 
 ```
@@ -104,6 +164,7 @@ Environment variables such as `SYNOLOGY_URL`, `SYNOLOGY_OP_ITEM`, etc., can be a
 - `n` — new task (inline URL prompt with paste support)  
 - `d` — delete selected task  
 - `c` — clear all completed tasks  
+- `s` — toggle sort by name  
 - `r` — manual refresh (auto refresh already runs every ~1 s)  
 - `q` — quit the TUI
 - Paste multiple URLs separated by whitespace/newlines into the new-task prompt and press `Option+Enter` to queue them all at once.

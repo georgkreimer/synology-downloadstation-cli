@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "bun run src/index.tsx",
-    "build": "rm -rf dist && bun build src/index.tsx --outdir dist --target bun --minify --banner \"js=#!/usr/bin/env bun\"",
+    "build": "rm -rf dist && bun build src/index.tsx --outdir dist --target bun --minify && chmod +x dist/index.js",
     "lint": "bunx tsc --noEmit",
     "start": "bun run dist/index.js",
     "test": "bun test"

@@ -40,19 +40,28 @@ interface ResolvedConfig {
   timeoutMs: number
 }
 
-export async function resolveConfig(options: CLIOptions): Promise<ResolvedConfig> {
+export async function resolveConfig(options: CLIOptions & { nonInteractive?: boolean }): Promise<ResolvedConfig> {
   const storedConfig = loadConfig()
+
+  const requireInteractive = (question: string) => {
+    if (options.nonInteractive) {
+      throw new Error(`Missing configuration: ${question} Run the TUI first to complete onboarding, or pass --host and --op-item flags.`)
+    }
+  }
 
   let host = options.host ?? storedConfig.host ?? ""
   if (!host) {
+    requireInteractive("no host configured.")
     host = await prompt("Synology URL: ")
   }
   host = normalizeHost(host)
 
   let allowInsecure = options.insecure ?? storedConfig.allowInsecure ?? false
   if (!options.insecure && storedConfig.allowInsecure === undefined && host.startsWith("https://")) {
-    const answer = await prompt("Allow self-signed certificates? (y/N): ", { allowEmpty: true })
-    allowInsecure = /^y(es)?$/i.test(answer)
+    if (!options.nonInteractive) {
+      const answer = await prompt("Allow self-signed certificates? (y/N): ", { allowEmpty: true })
+      allowInsecure = /^y(es)?$/i.test(answer)
+    }
   }
 
   let opItem = options.opItem ?? storedConfig.opItem
@@ -61,11 +70,13 @@ export async function resolveConfig(options: CLIOptions): Promise<ResolvedConfig
   const timeoutMs = Number.parseInt(options.timeout ?? "10000", 10)
 
   if (!options.opItem && !storedConfig.opItem) {
-    const choice = await prompt("Use 1Password CLI for credentials? (y/N): ", { allowEmpty: true })
-    if (/^y(es)?$/i.test(choice)) {
-      opItem = await prompt("1Password item name or ID: ")
-      const vaultAnswer = await prompt("1Password vault (press Enter for default): ", { allowEmpty: true })
-      opVault = vaultAnswer.trim() !== "" ? vaultAnswer.trim() : undefined
+    if (!options.nonInteractive) {
+      const choice = await prompt("Use 1Password CLI for credentials? (y/N): ", { allowEmpty: true })
+      if (/^y(es)?$/i.test(choice)) {
+        opItem = await prompt("1Password item name or ID: ")
+        const vaultAnswer = await prompt("1Password vault (press Enter for default): ", { allowEmpty: true })
+        opVault = vaultAnswer.trim() !== "" ? vaultAnswer.trim() : undefined
+      }
     }
   }
 
@@ -80,7 +91,7 @@ export async function resolveConfig(options: CLIOptions): Promise<ResolvedConfig
   return { host, allowInsecure, opItem, opVault, useSessionCache, timeoutMs }
 }
 
-async function runTui(options: CLIOptions) {
+async function runTui(options: CLIOptions, relayPort: number) {
   ensureBunPolyfills()
   const config = await resolveConfig(options)
 
@@ -88,6 +99,21 @@ async function runTui(options: CLIOptions) {
     ...config,
     manualFallback: true,
   })
+
+  const { loadSession } = await import("./services/sessionStore")
+  let relayServer: ReturnType<typeof startRelay> | undefined
+  try {
+    relayServer = startRelay({
+      client: auth.client,
+      host: config.host,
+      port: relayPort,
+      refreshSession: auth.refreshSession,
+      resolveDestination: () => loadSession(config.host)?.destination,
+    })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error(`Warning: relay failed to start on port ${relayPort} (${msg}). Safari extension will not work.`)
+  }
 
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
   createRoot(renderer).render(
@@ -99,12 +125,13 @@ async function runTui(options: CLIOptions) {
       initialTasks={auth.initialTasks}
       initialDestination={auth.cachedDestination}
       onDestinationChange={auth.updateDestination}
+      relayPort={relayServer?.port}
     />,
   )
 }
 
 async function runServe(options: CLIOptions, port: number) {
-  const config = await resolveConfig(options)
+  const config = await resolveConfig({ ...options, nonInteractive: true })
 
   const auth = await authenticate({
     ...config,
@@ -123,6 +150,15 @@ async function runServe(options: CLIOptions, port: number) {
   console.log(`Relay listening on http://127.0.0.1:${server.port}`)
   console.log(`Connected to ${config.host} as ${auth.username}`)
   console.log("Press Ctrl+C to stop.")
+
+  await new Promise<void>((resolve) => {
+    const shutdown = () => {
+      server.stop()
+      resolve()
+    }
+    process.on("SIGINT", shutdown)
+    process.on("SIGTERM", shutdown)
+  })
 }
 
 async function main() {
@@ -152,7 +188,7 @@ async function main() {
 
   program.action(async () => {
     const options = program.opts<CLIOptions>()
-    await runTui(options)
+    await runTui(options, DEFAULT_RELAY_PORT)
   })
 
   await program.parseAsync(process.argv)

@@ -28,5 +28,7 @@ export function readJSONFile<T>(filePath: string): T | undefined {
 }
 
 export function writeJSONFile<T>(filePath: string, data: T) {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 })
+  const tmpPath = `${filePath}.${process.pid}.tmp`
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 })
+  fs.renameSync(tmpPath, filePath)
 }

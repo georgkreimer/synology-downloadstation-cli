@@ -29,8 +29,11 @@ Bun 1.2.x + strict TypeScript CLI for Synology Download Station. The TUI is Reac
 - `src/services/SynologyClient.ts` — All Synology API calls go through this class (POST to `/webapi/entry.cgi`). Uses `SynologyRequestError` with Synology error codes. Code 119 = session expired. Code 120 = missing destination.
 - `src/services/configStore.ts` / `sessionStore.ts` — JSON file persistence under `~/.config/synology-ds/`. Config stores host/TLS/1Password prefs. Sessions store SID + username + cached destination per host.
 - `src/services/onePassword.ts` — Synchronous `op` CLI integration via `spawnSync`. Fetches credentials + TOTP.
+- `src/services/auth.ts` — Auth orchestration: session validation, 1Password/manual login, session merge, and `refreshSession` / `updateDestination` callbacks.
+- `src/services/relay.ts` — Localhost HTTP relay (`Bun.serve`) for the Safari extension. Validates Origin (`safari-web-extension://`), handles session re-auth with promise coalescing.
 - `src/services/prompt.ts` — readline-based interactive prompts (including hidden input for passwords).
 - `src/tui/App.tsx` — Single large component: task table with responsive column widths, keyboard shortcuts, inline URL creation via `<textarea>`. No sub-components currently.
+- `src/tui/theme.ts` — Centralized color constants for the TUI.
 - `src/types/synology.ts` — Shared type definitions for Synology API responses and task status codes.
 - `src/utils/formatting.ts` — Byte/speed/percent formatters and `deriveProgress`.
 - `src/utils/fs.ts` — Config dir management (`~/.config/synology-ds/`) and JSON read/write helpers.
@@ -39,7 +42,7 @@ Bun 1.2.x + strict TypeScript CLI for Synology Download Station. The TUI is Reac
 
 - **Session reauth:** Both `loadTasks` and `performAction` in App.tsx catch error code 119 and transparently re-authenticate before retrying. Manual logins reprompt inline; 1Password logins call `op` again.
 - **Destination caching:** The NAS returns error 120 if `destination` is omitted on task creation. The app extracts destination from existing tasks and persists it in `sessions.json` to avoid this.
-- **TLS:** `--insecure` sets `NODE_TLS_REJECT_UNAUTHORIZED=0` process-wide in the SynologyClient constructor. This is intentional and scoped to the process.
+- **TLS:** `--insecure` passes `tls: { rejectUnauthorized: false }` per-request in `SynologyClient.post()`. Scoped to Synology API calls only.
 - **Bun polyfill:** `ensureBunPolyfills()` in index.tsx shims `Bun.stripANSI` using the `strip-ansi` package (needed by OpenTUI).
 
 ## Coding Conventions
@@ -47,7 +50,7 @@ Bun 1.2.x + strict TypeScript CLI for Synology Download Station. The TUI is Reac
 - TypeScript strict mode. Explicit `interface`/`type` over `any`. Exported symbols must have return types.
 - Functional React components + hooks only. OpenTUI layout primitives: `<box>`, `<text>`, `<textarea>`, `<span>`.
 - 2-space indent. No additional lint tools beyond `tsc --noEmit`.
-- Commit format: lowercase prefix, e.g. `feature: add tui header borders`, `fix: handle otp expiry`.
+- Commit format: conventional commits with optional scope, e.g. `feat(cli): add serve subcommand`, `fix: handle otp expiry`, `refactor(auth): extract module`.
 - Tests live under `src/**/__tests__/` as `*.test.ts` files.
 - No Swift/ncurses code — the project was fully migrated to Bun + OpenTUI.
 

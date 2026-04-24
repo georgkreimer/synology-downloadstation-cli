@@ -1,27 +1,36 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
 
-// Create a temp directory for test session files
 const tmpDir = path.join(os.tmpdir(), `synology-ds-test-${Date.now()}`)
 fs.mkdirSync(tmpDir, { recursive: true })
+
+mock.module("../../utils/fs", () => ({
+  getConfigPath: (fileName: string) => path.join(tmpDir, fileName),
+  ensureConfigDir: () => tmpDir,
+  readJSONFile: <T,>(filePath: string): T | undefined => {
+    if (!fs.existsSync(filePath)) return undefined
+    try {
+      const raw = fs.readFileSync(filePath, "utf8")
+      const parsed: unknown = JSON.parse(raw)
+      if (parsed === null || typeof parsed !== "object") return undefined
+      return parsed as T
+    } catch {
+      return undefined
+    }
+  },
+  writeJSONFile: <T,>(filePath: string, data: T) => {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 })
+  },
+}))
+
+const { loadSession, updateSession, deleteSession } = await import("../sessionStore")
+
 const sessionFile = path.join(tmpDir, "sessions.json")
-
-// Mock the config path to use our temp directory
-const originalGetConfigPath = await import("../../utils/fs").then((m) => m.getConfigPath)
-
-// We need to test the module with a controlled file path, so we'll
-// directly test the logic by writing/reading the session file ourselves.
-import { loadSession, updateSession, deleteSession } from "../sessionStore"
-
-// Override the session file location by patching the module's internal path
-// Since we can't easily mock the import, we'll test via the public API
-// and use a known host to verify behavior.
 
 describe("sessionStore", () => {
   afterEach(() => {
-    // Clean up session file between tests
     try {
       fs.unlinkSync(sessionFile)
     } catch {
@@ -29,11 +38,13 @@ describe("sessionStore", () => {
     }
   })
 
+  afterAll(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
   test("loadSession returns undefined for unknown host", () => {
     const result = loadSession("https://nonexistent.local:5001")
-    // Will return undefined since no session has been saved for this host
-    // (or the file doesn't exist / session is expired)
-    expect(result === undefined || result === null || typeof result === "object").toBe(true)
+    expect(result).toBeUndefined()
   })
 
   test("updateSession writes and loadSession reads back", () => {

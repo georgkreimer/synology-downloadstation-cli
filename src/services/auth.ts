@@ -49,7 +49,6 @@ export async function authenticate(config: AuthConfig): Promise<AuthResult> {
   }
 
   const mergeSession = (partial: SessionState) => {
-    if (!cachedSession && !partial.sid) return
     cachedSession = { ...(cachedSession ?? {}), ...partial }
     if (config.useSessionCache) {
       updateSession(config.host, cachedSession)

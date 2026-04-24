@@ -1,5 +1,9 @@
 import type { AuthData, SynologyResponse, Task, TasksResponse, TaskOperation } from "../types/synology"
 
+export function isDownloadUrl(url: string): boolean {
+  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("magnet:")
+}
+
 export class SynologyRequestError extends Error {
   constructor(message: string, public readonly code?: number) {
     super(code ? `${message} (${code})` : message)
@@ -144,7 +148,7 @@ export class SynologyClient {
   }
 
   async createTaskFromUrl(url: string, destination?: string) {
-    if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("magnet:")) {
+    if (!isDownloadUrl(url)) {
       throw new Error("URL must start with http://, https://, or magnet:.")
     }
     const params: Record<string, string> = {

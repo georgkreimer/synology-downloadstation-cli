@@ -61,6 +61,7 @@ interface AppProps {
   initialTasks?: Task[]
   initialDestination?: string
   onDestinationChange?: (destination: string) => void
+  relayPort?: number
 }
 
 interface StatusMessage {
@@ -71,7 +72,6 @@ interface StatusMessage {
 interface PendingConfirm {
   action: "delete" | "clear"
   taskId?: string
-  timer: ReturnType<typeof setTimeout>
 }
 
 const REFRESH_INTERVAL_MS = 1000
@@ -97,6 +97,7 @@ export function App({
   initialTasks,
   initialDestination,
   onDestinationChange,
+  relayPort,
 }: AppProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(initialTasks?.[0]?.id ?? null)
@@ -116,6 +117,7 @@ export function App({
   const textareaRef = useRef<TextareaRenderable | null>(null)
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
   const defaultDestinationRef = useRef<string | undefined>(
@@ -139,6 +141,12 @@ export function App({
     return () => clearInterval(interval)
   }, [busy])
 
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+    }
+  }, [])
+
   const sortedTasks = useMemo(() => {
     if (!sortByName) return tasks
     return [...tasks].sort((a, b) => a.title.localeCompare(b.title))
@@ -161,9 +169,9 @@ export function App({
 
   // Derive selected index from selectedId
   const selectedIndex = useMemo(() => {
-    if (!selectedId) return sortedTasks.length > 0 ? 0 : -1
+    if (!selectedId) return -1
     const idx = sortedTasks.findIndex((t) => t.id === selectedId)
-    return idx >= 0 ? idx : Math.min(sortedTasks.length - 1, 0)
+    return idx >= 0 ? idx : -1
   }, [selectedId, sortedTasks])
 
   // Status message helpers with auto-clear
@@ -308,11 +316,12 @@ export function App({
   const selectedTask = selectedIndex >= 0 ? sortedTasks[selectedIndex] : undefined
 
   const cancelConfirm = useCallback(() => {
-    if (pendingConfirm) {
-      clearTimeout(pendingConfirm.timer)
-      setPendingConfirm(null)
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current)
+      confirmTimerRef.current = null
     }
-  }, [pendingConfirm])
+    setPendingConfirm(null)
+  }, [])
 
   const togglePause = useCallback(() => {
     if (!selectedTask) return
@@ -342,11 +351,11 @@ export function App({
       cancelConfirm()
       const title = truncate(selectedTask.title, 30)
       setInfo(`Press d again to delete "${title}"`)
-      const timer = setTimeout(() => {
+      confirmTimerRef.current = setTimeout(() => {
         setPendingConfirm(null)
         setStatus(null)
       }, CONFIRM_TIMEOUT_MS)
-      setPendingConfirm({ action: "delete", taskId: selectedTask.id, timer })
+      setPendingConfirm({ action: "delete", taskId: selectedTask.id })
     }
   }, [client, performAction, selectedTask, pendingConfirm, cancelConfirm, setInfo])
 
@@ -358,13 +367,18 @@ export function App({
     } else {
       cancelConfirm()
       setInfo("Press c again to clear completed tasks")
-      const timer = setTimeout(() => {
+      confirmTimerRef.current = setTimeout(() => {
         setPendingConfirm(null)
         setStatus(null)
       }, CONFIRM_TIMEOUT_MS)
-      setPendingConfirm({ action: "clear", timer })
+      setPendingConfirm({ action: "clear" })
     }
   }, [client, performAction, pendingConfirm, cancelConfirm, setInfo])
+
+  const getNewTaskInput = () => textareaRef.current?.plainText ?? ""
+  const resetNewTaskInput = () => {
+    setTextareaKey((key) => key + 1)
+  }
 
   const handleCreate = useCallback(async () => {
     const urls = splitUrls(getNewTaskInput())
@@ -491,10 +505,6 @@ export function App({
   const lastRefreshText = lastRefresh ? lastRefresh.toLocaleTimeString() : "…"
   const sortLabel = sortByName ? " ↑" : ""
   const tableTitle = tasks.length > 0 ? ` Downloads (${tasks.length})${sortLabel} ` : " Downloads "
-  const getNewTaskInput = () => textareaRef.current?.plainText ?? ""
-  const resetNewTaskInput = () => {
-    setTextareaKey((key) => key + 1)
-  }
 
   const spinnerText = busy ? `${SPINNER_FRAMES[spinnerFrame]} Working…` : null
 
@@ -514,6 +524,7 @@ export function App({
         </box>
         <box flexDirection="column" alignItems="flex-end" style={{ gap: 0 }}>
           <text fg={theme.muted}>{headerText}</text>
+          {relayPort && <text fg={theme.muted}>{`relay :${relayPort}`}</text>}
           <text fg={theme.muted}>{lastRefreshText}</text>
           <text fg={statusColor}>{statusLine}</text>
         </box>
@@ -772,5 +783,5 @@ function splitUrls(input: string): string[] {
 }
 
 function sanitizeInput(value: string): string {
-  return stripAnsi(value).replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
+  return stripAnsi(value).replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000B-\u001F\u007F\u200B\uFEFF\u202A-\u202E\u2066-\u2069]/g, "")
 }

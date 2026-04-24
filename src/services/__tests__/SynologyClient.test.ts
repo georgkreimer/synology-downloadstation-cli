@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { SynologyClient, SynologyRequestError } from "../SynologyClient"
+import { SynologyClient, SynologyRequestError, isDownloadUrl } from "../SynologyClient"
 
 const originalFetch = globalThis.fetch
 
@@ -151,5 +151,47 @@ describe("SynologyClient", () => {
       "Session expired",
     )
     expect(client.sessionId).toBeUndefined()
+  })
+
+  test("getDefaultDestination returns destination on success", async () => {
+    const client = new SynologyClient({ host: "https://nas.local:5001", timeoutMs: 5000 })
+    client.sessionId = "abc123"
+    setMockFetch(async () =>
+      new Response(JSON.stringify({ success: true, data: { default_destination: "/volume1/downloads" } }), { status: 200 }),
+    )
+
+    const dest = await client.getDefaultDestination()
+    expect(dest).toBe("/volume1/downloads")
+  })
+
+  test("getDefaultDestination returns undefined on API error", async () => {
+    const client = new SynologyClient({ host: "https://nas.local:5001", timeoutMs: 5000 })
+    client.sessionId = "abc123"
+    setMockFetch(async () =>
+      new Response(JSON.stringify({ success: false, error: { code: 100 } }), { status: 200 }),
+    )
+
+    const dest = await client.getDefaultDestination()
+    expect(dest).toBeUndefined()
+  })
+
+  test("getDefaultDestination returns undefined on network error", async () => {
+    const client = new SynologyClient({ host: "https://nas.local:5001", timeoutMs: 5000 })
+    client.sessionId = "abc123"
+    setMockFetch(async () => {
+      throw new Error("ECONNREFUSED")
+    })
+
+    const dest = await client.getDefaultDestination()
+    expect(dest).toBeUndefined()
+  })
+
+  test("isDownloadUrl validates URL schemes", () => {
+    expect(isDownloadUrl("https://example.com/file.iso")).toBe(true)
+    expect(isDownloadUrl("http://example.com/file.iso")).toBe(true)
+    expect(isDownloadUrl("magnet:?xt=urn:btih:abc123")).toBe(true)
+    expect(isDownloadUrl("ftp://example.com/file")).toBe(false)
+    expect(isDownloadUrl("javascript:alert(1)")).toBe(false)
+    expect(isDownloadUrl("data:text/html,test")).toBe(false)
   })
 })
