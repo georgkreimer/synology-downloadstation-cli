@@ -1,40 +1,44 @@
 export const theme = {
-  banner: "#8be9fd",
-  header: "#cdd6f4",
-  tableHeader: "#88c0d0",
-  muted: "#999999",
+  banner: "#89b4fa",
+  muted: "#6c7086",
+  border: "#313244",
 
   row: {
-    bg: "#1B1D2A",
-    selectedBg: "#2F3C51",
-    selectedFg: "#E7F6F2",
-    indicator: "#4ee1c1",
-    title: "#8be9fd",
-    progress: "#ffd369",
+    selectedBg: "#313244",
+    selectedFg: "#cdd6f4",
+    indicator: "#89b4fa",
+    title: "#cdd6f4",
+    progress: "#f9e2af",
     speed: "#a6e3a1",
-    size: "#f1fa8c",
-    destination: "#89b4fa",
+    size: "#9399b2",
   },
 
   status: {
-    downloading: "#4ee1c1",
-    paused: "#ffb86c",
+    downloading: "#89b4fa",
+    paused: "#fab387",
     finished: "#a6e3a1",
-    seeding: "#84ffff",
-    error: "#ff5555",
+    seeding: "#94e2d5",
+    error: "#f38ba8",
     default: "#cdd6f4",
   },
 
-  progressBar: {
-    fill: "#ffd369",
-    track: "#44475a",
+  progress: {
+    filledFg: "#1e1e2e",
+    filledBg: "#89b4fa",
+    trackFg: "#6c7086",
+    trackBg: "#181825",
   },
 
   scrollbar: {
-    thumb: "#6272a4",
-    track: "#282a36",
+    thumb: "#45475a",
+    track: "#181825",
+  },
+
+  keyhint: {
+    key: "#89b4fa",
+    label: "#585b70",
   },
 
   detail: "#b4befe",
-  emptyState: "#6272a4",
+  emptyState: "#45475a",
 } as const

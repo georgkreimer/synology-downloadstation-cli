@@ -3,26 +3,35 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { TextareaRenderable, ScrollBoxRenderable } from "@opentui/core"
 import type { Task } from "../types/synology"
 import { SynologyClient, SynologyRequestError } from "../services/SynologyClient"
-import { formatBytes, formatProgressBar, formatSpeed, deriveProgress } from "../utils/formatting"
+import { formatBytes, formatProgressBar, formatSpeed, deriveProgress, type ProgressBarSegment } from "../utils/formatting"
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import stripAnsi from "strip-ansi"
 import { theme } from "./theme"
 
 const BANNER = [
-  "███████╗██╗   ██╗███╗   ██╗ ██████╗ ██╗      ██████╗  ██████╗██╗   ██╗    ██████╗ ███████╗",
-  "██╔════╝╚██╗ ██╔╝████╗  ██║██╔═══██╗██║     ██╔═══██╗██╔════╝╚██╗ ██╔╝    ██╔══██╗██╔════╝",
-  "███████╗ ╚████╔╝ ██╔██╗ ██║██║   ██║██║     ██║   ██║██║  ███╗╚████╔╝     ██║  ██║███████╗",
-  "╚════██║  ╚██╔╝  ██║╚██╗██║██║   ██║██║     ██║   ██║██║   ██║ ╚██╔╝      ██║  ██║╚════██║",
-  "███████║   ██║   ██║ ╚████║╚██████╔╝███████╗╚██████╔╝╚██████╔╝  ██║       ██████╔╝███████║",
-  "╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝   ╚═╝       ╚═════╝ ╚══════╝",
+  "█▀▀▀ █  █ █▀▀█ █▀▀█ █    █▀▀█ █▀▀▀ █  █    █▀▀▄ █▀▀▀",
+  "▀▀▀█ ▀▀▀█ █  █ █  █ █    █  █ █ ▀█ ▀▀▀█    █  █ ▀▀▀█",
+  "▀▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀    ▀▀▀▀ ▀▀▀▀",
 ]
 
-const EMPTY_STATE_ART = [
-  "    ╭──────╮",
-  "    │  ↓↓  │",
-  "    │  ↓↓  │",
-  "    ╰──────╯",
-]
+
+const STATUS_GLYPHS: Record<number, string> = {
+  1: "◌",
+  2: "▼",
+  3: "⏸",
+  4: "◈",
+  5: "✓",
+  6: "⟳",
+  7: "◈",
+  8: "▲",
+  9: "◌",
+  10: "⟳",
+  11: "◌",
+  12: "⟳",
+  13: "✓",
+  14: "◈",
+  15: "⚠",
+}
 
 const STATUS_LABELS: Record<number, string> = {
   1: "waiting",
@@ -69,38 +78,14 @@ const REFRESH_INTERVAL_MS = 1000
 const STATUS_FADE_MS = 3000
 const CONFIRM_TIMEOUT_MS = 2000
 const SPINNER_INTERVAL_MS = 80
-const BANNER_COLLAPSE_MS = 3000
 const PAGE_SIZE_FALLBACK = 10
 
-const COLUMN_MIN_WIDTHS = {
-  indicator: 2,
-  title: 20,
-  status: 12,
-  progress: 10,
-  speed: 12,
-  size: 10,
-  destination: 18,
-}
-
-const COLUMN_ABSOLUTE_MIN = {
-  indicator: 2,
-  title: 12,
-  status: 9,
-  progress: 8,
-  speed: 10,
-  size: 8,
-  destination: 12,
-}
-
 type ColumnWidths = {
-  indicator: number
+  glyph: number
   title: number
-  status: number
   progress: number
   speed: number
   size: number
-  destination: number
-  separatorCount: number
   total: number
 }
 
@@ -121,7 +106,6 @@ export function App({
   const [showCreatePrompt, setShowCreatePrompt] = useState(false)
   const [textareaKey, setTextareaKey] = useState(0)
   const [busy, setBusy] = useState(false)
-  const [bannerExpanded, setBannerExpanded] = useState(true)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
   const [spinnerFrame, setSpinnerFrame] = useState(0)
@@ -142,11 +126,6 @@ export function App({
     }
   }, [initialDestination])
 
-  // Banner auto-collapse after 3 seconds
-  useEffect(() => {
-    const timer = setTimeout(() => setBannerExpanded(false), BANNER_COLLAPSE_MS)
-    return () => clearTimeout(timer)
-  }, [])
 
   // Spinner animation when busy
   useEffect(() => {
@@ -160,66 +139,17 @@ export function App({
   const viewportHeight = Math.max(height - 2, 16)
 
   const columnWidths = useMemo<ColumnWidths>(() => {
-    const separatorCount = 6
     const innerWidth = Math.max(width - 6, 0)
-    const widths: ColumnWidths = {
-      indicator: COLUMN_MIN_WIDTHS.indicator,
-      title: COLUMN_MIN_WIDTHS.title,
-      status: COLUMN_MIN_WIDTHS.status,
-      progress: COLUMN_MIN_WIDTHS.progress,
-      speed: COLUMN_MIN_WIDTHS.speed,
-      size: COLUMN_MIN_WIDTHS.size,
-      destination: COLUMN_MIN_WIDTHS.destination,
-      separatorCount,
-      total: innerWidth,
-    }
-
-    const sumColumns =
-      widths.indicator +
-      widths.title +
-      widths.status +
-      widths.progress +
-      widths.speed +
-      widths.size +
-      widths.destination +
-      separatorCount
-
-    if (innerWidth >= sumColumns) {
-      const extra = innerWidth - sumColumns
-      const titleExtra = Math.floor(extra * 0.85)
-      const destinationExtra = extra - titleExtra
-      widths.title += titleExtra
-      widths.destination += destinationExtra
-      widths.total = innerWidth
-      return widths
-    }
-
-    let deficit = sumColumns - innerWidth
-    const reduceOrder: (keyof typeof COLUMN_MIN_WIDTHS)[] = [
-      "title",
-      "destination",
-      "speed",
-      "size",
-      "status",
-      "progress",
-    ]
-    for (const key of reduceOrder) {
-      while (deficit > 0 && widths[key] > COLUMN_ABSOLUTE_MIN[key]) {
-        widths[key] -= 1
-        deficit -= 1
-        if (deficit === 0) {
-          break
-        }
-      }
-      if (deficit === 0) {
-        break
-      }
-    }
-    widths.total = innerWidth
-    return widths
+    const glyphW = 2
+    const speedW = 10
+    const sizeW = 9
+    const separators = 4
+    const fixed = glyphW + speedW + sizeW + separators
+    const flexible = Math.max(innerWidth - fixed, 20)
+    const progressW = Math.max(Math.floor(flexible * 0.3), 12)
+    const titleW = flexible - progressW
+    return { glyph: glyphW, title: titleW, progress: progressW, speed: speedW, size: sizeW, total: innerWidth }
   }, [width])
-
-  const tableWidth = columnWidths.total
 
   // Derive selected index from selectedId
   const selectedIndex = useMemo(() => {
@@ -467,11 +397,6 @@ export function App({
       process.exit(0)
     }
 
-    // Collapse banner on any keypress
-    if (bannerExpanded) {
-      setBannerExpanded(false)
-    }
-
     // Clear error status on any keypress (R8)
     if (status?.tone === "error") {
       clearStatusTimer()
@@ -551,9 +476,9 @@ export function App({
     }
   })
 
-  const headerText = `Connected to ${host} as ${username}`
-  const lastRefreshText = lastRefresh ? `Last refresh: ${lastRefresh.toLocaleTimeString()}` : "Fetching tasks…"
-  const instructions = "↑/↓ move · PgUp/PgDn page · ⏎ detail · space pause · n new · d del · c clear · r refresh · q quit"
+  const headerText = `${username}@${new URL(host).hostname}`
+  const lastRefreshText = lastRefresh ? lastRefresh.toLocaleTimeString() : "…"
+  const tableTitle = tasks.length > 0 ? ` Downloads (${tasks.length}) ` : " Downloads "
   const getNewTaskInput = () => textareaRef.current?.plainText ?? ""
   const resetNewTaskInput = () => {
     setTextareaKey((key) => key + 1)
@@ -561,117 +486,131 @@ export function App({
 
   const spinnerText = busy ? `${SPINNER_FRAMES[spinnerFrame]} Working…` : null
 
-  return (
-    <box flexDirection="column" style={{ padding: 1, gap: 1, height: viewportHeight, minHeight: height }}>
-      {bannerExpanded ? (
-        <box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
-          <box flexDirection="column" style={{ gap: 0 }}>
-            {BANNER.map((line, index) => (
-              <text key={`banner-${index}`} fg={theme.banner}>
-                {line}
-              </text>
-            ))}
-          </box>
-          <box flexDirection="column" alignItems="flex-end" style={{ gap: 0 }}>
-            <text fg={theme.header}>{headerText}</text>
-            <text>{lastRefreshText}</text>
-            {renderStatusArea(status, spinnerText)}
-          </box>
-        </box>
-      ) : (
-        <box flexDirection="row" justifyContent="space-between">
-          <text fg={theme.banner}>SYNOLOGY DS</text>
-          <box flexDirection="row" style={{ gap: 2 }}>
-            <text fg={theme.header}>{headerText}</text>
-            <text>{lastRefreshText}</text>
-            {renderStatusArea(status, spinnerText)}
-          </box>
-        </box>
-      )}
+  const statusLine = spinnerText ?? (status ? status.text : "")
+  const statusColor = spinnerText ? theme.muted : status?.tone === "error" ? theme.status.error : status?.tone === "success" ? theme.status.finished : theme.muted
 
-      <box flexDirection="column" style={{ flexGrow: 1, gap: 1, minHeight: 0 }}>
-        <box flexDirection="column" style={{ border: true, padding: 1, flexGrow: 1, minHeight: 0 }}>
-          <text>
-            <strong fg={theme.tableHeader}>{formatHeader(columnWidths, tableWidth)}</strong>
-          </text>
-          {loading && <text>Loading…</text>}
-          {!loading && tasks.length === 0 && (
-            <box flexDirection="column" alignItems="center" justifyContent="center" style={{ flexGrow: 1 }}>
-              {EMPTY_STATE_ART.map((line, i) => (
-                <text key={`empty-${i}`} fg={theme.emptyState}>
-                  {line}
-                </text>
-              ))}
-              <text fg={theme.muted}>No downloads. Press n to add a URL.</text>
-            </box>
-          )}
-          {!loading && tasks.length > 0 && (
-            <scrollbox
-              scrollY
-              viewportCulling
-              ref={scrollBoxRef}
-              style={{ flexGrow: 1, minHeight: 0 }}
-              verticalScrollbarOptions={{
-                trackOptions: {
-                  foregroundColor: theme.scrollbar.thumb,
-                  backgroundColor: theme.scrollbar.track,
-                },
-              }}
-            >
-              {tasks.map((task, index) => {
-                const isSelected = task.id === selectedId
-                const isError = task.status >= 101
-                const isExpanded = expandedTaskId === task.id || isError
-                return (
-                  <box
-                    key={task.id}
-                    id={task.id}
-                    flexDirection="column"
-                  >
-                    <box
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "flex-start",
-                        backgroundColor: isSelected ? theme.row.selectedBg : theme.row.bg,
-                        width: columnWidths.total,
-                      }}
-                    >
-                      <text style={isSelected ? { fg: theme.row.selectedFg } : isError ? { fg: theme.status.error } : undefined}>
-                        {renderRow(task, columnWidths, tableWidth, isSelected, isError)}
-                      </text>
-                    </box>
-                    {isExpanded && renderTaskDetail(task)}
-                  </box>
-                )
-              })}
-            </scrollbox>
-          )}
+  return (
+    <box flexDirection="column" style={{ padding: 1, gap: 0, height: viewportHeight, minHeight: height }}>
+      {/* Header: banner + connection/status info */}
+      <box flexDirection="row" justifyContent="space-between" alignItems="flex-start">
+        <box flexDirection="column" style={{ gap: 0 }}>
+          {BANNER.map((line, index) => (
+            <text key={`banner-${index}`} fg={theme.banner}>
+              {line}
+            </text>
+          ))}
+        </box>
+        <box flexDirection="column" alignItems="flex-end" style={{ gap: 0 }}>
+          <text fg={theme.muted}>{headerText}</text>
+          <text fg={theme.muted}>{lastRefreshText}</text>
+          <text fg={statusColor}>{statusLine}</text>
         </box>
       </box>
 
-      <text style={{ marginTop: "auto" }}>{instructions}</text>
+      {/* Main table */}
+      <box
+        flexDirection="column"
+        title={tableTitle}
+        style={{
+          border: true,
+          borderStyle: "rounded",
+          borderColor: theme.border,
+          padding: 1,
+          flexGrow: 1,
+          minHeight: 0,
+          marginTop: 1,
+        }}
+      >
+        <text fg={theme.muted} style={{ flexShrink: 0 }}>{formatHeader(columnWidths)}</text>
+        <text fg={theme.border} style={{ flexShrink: 0 }}>{"─".repeat(columnWidths.total)}</text>
+        {loading && <text fg={theme.muted}>Loading…</text>}
+        {!loading && tasks.length === 0 && (
+          <box flexDirection="column" alignItems="center" justifyContent="center" style={{ flexGrow: 1 }}>
+            <text fg={theme.muted}>No active downloads</text>
+            <text fg={theme.emptyState}>Press <span fg={theme.keyhint.key}>n</span> to add a URL</text>
+          </box>
+        )}
+        {!loading && tasks.length > 0 && (
+          <scrollbox
+            scrollY
+            viewportCulling
+            ref={scrollBoxRef}
+            style={{ flexGrow: 1, minHeight: 0 }}
+            verticalScrollbarOptions={{
+              trackOptions: {
+                foregroundColor: theme.scrollbar.thumb,
+                backgroundColor: theme.scrollbar.track,
+              },
+            }}
+          >
+            {tasks.map((task) => {
+              const isSelected = task.id === selectedId
+              const isError = task.status >= 101
+              const isExpanded = expandedTaskId === task.id || isError
+              return (
+                <box
+                  key={task.id}
+                  id={task.id}
+                  flexDirection="column"
+                >
+                  <box
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "flex-start",
+                      backgroundColor: isSelected ? theme.row.selectedBg : undefined,
+                      width: columnWidths.total,
+                    }}
+                  >
+                    <text style={isSelected ? { fg: theme.row.selectedFg } : isError ? { fg: theme.status.error } : undefined}>
+                      {renderRow(task, columnWidths, isSelected, isError)}
+                    </text>
+                  </box>
+                  {isExpanded && renderTaskDetail(task)}
+                </box>
+              )
+            })}
+          </scrollbox>
+        )}
+      </box>
 
+      {/* Footer: keybinding hints */}
+      <box flexDirection="row" style={{ marginTop: 1 }}>
+        <text>
+          <span fg={theme.keyhint.key}>↑↓</span><span fg={theme.keyhint.label}> navigate  </span>
+          <span fg={theme.keyhint.key}>⏎</span><span fg={theme.keyhint.label}> detail  </span>
+          <span fg={theme.keyhint.key}>space</span><span fg={theme.keyhint.label}> pause  </span>
+          <span fg={theme.keyhint.key}>n</span><span fg={theme.keyhint.label}> new  </span>
+          <span fg={theme.keyhint.key}>d</span><span fg={theme.keyhint.label}> delete  </span>
+          <span fg={theme.keyhint.key}>c</span><span fg={theme.keyhint.label}> clear  </span>
+          <span fg={theme.keyhint.key}>r</span><span fg={theme.keyhint.label}> refresh  </span>
+          <span fg={theme.keyhint.key}>q</span><span fg={theme.keyhint.label}> quit</span>
+        </text>
+      </box>
+
+      {/* Create modal */}
       {showCreatePrompt && (
         <box
           style={{
             position: "absolute",
             top: Math.max(Math.floor(viewportHeight / 2) - 7, 2),
-            left: Math.max(Math.floor((width - 60) / 2), 2),
-            width: Math.min(60, width - 4),
+            left: Math.max(Math.floor((width - 64) / 2), 2),
+            width: Math.min(64, width - 4),
             zIndex: 10,
           }}
         >
           <box
             flexDirection="column"
+            title=" New Download "
             style={{
               border: true,
+              borderStyle: "rounded",
+              borderColor: theme.keyhint.key,
               padding: 1,
               gap: 1,
-              backgroundColor: "#1e1e2e",
+              backgroundColor: "#181825",
             }}
           >
-            <text fg={theme.tableHeader}>New Download Task</text>
-            <text>Enter URL(s):</text>
+            <text fg={theme.muted}>Paste one or more URLs, one per line:</text>
             <textarea
               key={textareaKey}
               ref={textareaRef}
@@ -680,7 +619,10 @@ export function App({
               style={{ minHeight: 4, maxHeight: 8 }}
               focused
             />
-            <text style={{ fg: theme.muted }}>Ctrl+Enter to create · Esc to cancel</text>
+            <text>
+              <span fg={theme.keyhint.key}>Ctrl+⏎</span><span fg={theme.keyhint.label}> create  </span>
+              <span fg={theme.keyhint.key}>Esc</span><span fg={theme.keyhint.label}> cancel</span>
+            </text>
           </box>
         </box>
       )}
@@ -688,101 +630,82 @@ export function App({
   )
 }
 
-function renderStatusArea(status: StatusMessage | null, spinnerText: string | null) {
-  if (spinnerText) {
-    return <text style={{ fg: theme.muted }}>{spinnerText}</text>
-  }
-  if (status) {
-    return (
-      <text style={{ fg: status.tone === "error" ? "red" : status.tone === "success" ? "green" : theme.muted }}>
-        {status.text}
-      </text>
-    )
-  }
-  return null
-}
-
 function renderTaskDetail(task: Task) {
   const detail = task.additional?.detail
   const transfer = task.additional?.transfer
   const errorDetail = task.status_extra?.error_detail
-  const lines: string[] = []
+  const statusLabel = STATUS_LABELS[task.status] ?? (task.status >= 101 ? `error ${task.status}` : `status ${task.status}`)
 
-  if (detail?.uri) {
-    lines.push(`  URL: ${detail.uri}`)
-  }
-  const times: string[] = []
-  if (detail?.created_time) times.push(`Created: ${new Date(detail.created_time * 1000).toLocaleString()}`)
-  if (detail?.started_time) times.push(`Started: ${new Date(detail.started_time * 1000).toLocaleString()}`)
-  if (detail?.completed_time) times.push(`Done: ${new Date(detail.completed_time * 1000).toLocaleString()}`)
-  if (times.length > 0) lines.push(`  ${times.join(" · ")}`)
-
-  const extras: string[] = []
-  if (transfer?.downloaded_pieces !== undefined) extras.push(`Pieces: ${transfer.downloaded_pieces}`)
-  if (errorDetail) extras.push(`Error: ${errorDetail}`)
-  if (extras.length > 0) lines.push(`  ${extras.join(" · ")}`)
-
-  if (lines.length === 0) {
-    lines.push("  No additional detail available.")
-  }
+  const fields: Array<{ label: string; value: string; color?: string }> = [
+    { label: "Status", value: statusLabel, color: getStatusColor(task.status) },
+  ]
+  if (detail?.destination) fields.push({ label: "Dest", value: detail.destination })
+  if (detail?.uri) fields.push({ label: "URL", value: detail.uri })
+  if (detail?.created_time) fields.push({ label: "Created", value: new Date(detail.created_time * 1000).toLocaleString() })
+  if (detail?.started_time) fields.push({ label: "Started", value: new Date(detail.started_time * 1000).toLocaleString() })
+  if (detail?.completed_time) fields.push({ label: "Done", value: new Date(detail.completed_time * 1000).toLocaleString() })
+  if (transfer?.downloaded_pieces !== undefined) fields.push({ label: "Pieces", value: `${transfer.downloaded_pieces}` })
+  if (errorDetail) fields.push({ label: "Error", value: errorDetail, color: theme.status.error })
 
   return (
-    <box flexDirection="column" style={{ backgroundColor: "#1e1e2e", paddingLeft: 3 }}>
-      {lines.map((line, i) => (
-        <text key={`detail-${i}`} fg={theme.detail}>
-          {line}
+    <box flexDirection="column" style={{ paddingLeft: 4, paddingBottom: 1 }}>
+      {fields.map((field, i) => (
+        <text key={`detail-${i}`}>
+          <span fg={theme.muted}>{field.label.padEnd(8)} </span>
+          <span fg={field.color ?? theme.detail}>{field.value}</span>
         </text>
       ))}
     </box>
   )
 }
 
-function formatHeader(widths: ColumnWidths, totalWidth: number): string {
+function formatHeader(widths: ColumnWidths): string {
   const row = [
-    "".padEnd(widths.indicator),
-    "Title".padEnd(widths.title),
-    "Status".padEnd(widths.status),
+    "".padEnd(widths.glyph),
+    "Name".padEnd(widths.title),
     "Progress".padEnd(widths.progress),
-    "Speed".padEnd(widths.speed),
-    "Size".padEnd(widths.size),
-    "Destination".padEnd(widths.destination),
+    padStart("Speed", widths.speed),
+    padStart("Size", widths.size),
   ].join(" ")
-  return padRow(row, totalWidth)
+  return padRow(row, widths.total)
 }
 
-function renderRow(task: Task, widths: ColumnWidths, totalWidth: number, isSelected: boolean, isError: boolean) {
-  const statusText = describeStatus(task.status)
+function renderRow(task: Task, widths: ColumnWidths, isSelected: boolean, isError: boolean) {
   const progress = deriveProgress(task)
   const transfer = task.additional?.transfer
-  const destination = task.additional?.detail?.destination ?? "-"
-  const indicator = isSelected ? "➤" : " "
+  const glyph = task.status >= 101 ? "✗" : (STATUS_GLYPHS[task.status] ?? "·")
+  const glyphColor = isSelected ? undefined : (isError ? theme.status.error : getStatusColor(task.status))
+  const progressSegments = formatProgressBar(progress, widths.progress)
 
-  const defaultFg = isError ? theme.status.error : undefined
-  const segments = [
-    { text: indicator.padEnd(widths.indicator), fg: isSelected ? undefined : (isError ? theme.status.error : theme.row.indicator) },
-    { text: truncate(task.title, widths.title), fg: isSelected ? undefined : (isError ? theme.status.error : theme.row.title) },
-    { text: statusText.padEnd(widths.status), fg: isSelected ? undefined : (isError ? theme.status.error : getStatusColor(task.status)) },
-    { text: formatProgressBar(progress, widths.progress), fg: isSelected ? undefined : (isError ? theme.status.error : theme.row.progress) },
-    { text: formatSpeed(transfer?.speed_download || transfer?.speed_upload).padEnd(widths.speed), fg: isSelected ? undefined : (isError ? theme.status.error : theme.row.speed) },
-    { text: formatBytes(task.size).padEnd(widths.size), fg: isSelected ? undefined : (isError ? theme.status.error : theme.row.size) },
-    { text: truncate(destination, widths.destination), fg: isSelected ? undefined : (isError ? theme.status.error : theme.row.destination) },
-  ]
-
-  const rawSegments = segments.map((segment, index) =>
-    index === segments.length - 1 ? segment.text : `${segment.text} `,
+  return (
+    <>
+      <span fg={glyphColor}>{`${glyph} `}</span>
+      <span fg={isSelected ? undefined : (isError ? theme.status.error : theme.row.title)}>{`${truncate(task.title, widths.title)} `}</span>
+      {renderProgressSegments(progressSegments, isSelected, isError)}
+      <span fg={isSelected ? undefined : (isError ? theme.status.error : theme.row.speed)}>{` ${padStart(formatSpeed(transfer?.speed_download || transfer?.speed_upload), widths.speed)}`}</span>
+      <span fg={isSelected ? undefined : (isError ? theme.status.error : theme.row.size)}>{` ${padStart(formatBytes(task.size), widths.size)}`}</span>
+    </>
   )
-  const padded = padRow(rawSegments.join(""), totalWidth)
-  let cursor = 0
-  return rawSegments.map((segmentText, index) => {
-    const length = segmentText.length
-    const text = padded.slice(cursor, cursor + length)
-    cursor += length
-    return (
-      <span key={index} fg={isSelected ? undefined : segments[index].fg}>
-        {text}
-      </span>
-    )
-  })
+}
+
+function renderProgressSegments(segments: ProgressBarSegment[], isSelected: boolean, isError: boolean) {
+  if (isSelected || isError) {
+    const text = segments.map((s) => s.text).join("")
+    return <span fg={isError ? theme.status.error : undefined}>{text}</span>
+  }
+  return segments.map((segment, i) => (
+    <span
+      key={i}
+      fg={segment.filled ? theme.progress.filledFg : theme.progress.trackFg}
+      bg={segment.filled ? theme.progress.filledBg : theme.progress.trackBg}
+    >
+      {segment.text}
+    </span>
+  ))
+}
+
+function padStart(text: string, width: number): string {
+  return text.length >= width ? text.slice(0, width) : text.padStart(width)
 }
 
 function truncate(text: string, width: number): string {
@@ -790,10 +713,6 @@ function truncate(text: string, width: number): string {
     return text.padEnd(width)
   }
   return `${text.slice(0, Math.max(0, width - 1))}…`
-}
-
-function describeStatus(status: Task["status"]): string {
-  return STATUS_LABELS[status] ?? (status >= 101 ? `error ${status}` : `status ${status}`)
 }
 
 function formatError(error: unknown, fallback: string): string {

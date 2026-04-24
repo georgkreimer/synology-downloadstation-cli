@@ -21,14 +21,34 @@ export function formatPercent(percent?: number): string {
   return `${percent.toFixed(0)}%`
 }
 
-export function formatProgressBar(percent: number | undefined, width: number): string {
-  if (percent === undefined || Number.isNaN(percent)) return "-".padEnd(width)
-  // Fixed-width percentage: always 4 chars ("  0%", " 50%", "100%") + 1 space separator
-  const pctText = `${Math.round(percent)}%`.padStart(4)
-  const barWidth = Math.max(width - 5, 2) // 4 chars pct + 1 space
-  const filled = Math.round((percent / 100) * barWidth)
-  const empty = barWidth - filled
-  return `${"\u2588".repeat(filled)}${"\u2591".repeat(empty)} ${pctText}`
+export interface ProgressBarSegment {
+  text: string
+  filled: boolean
+}
+
+export function formatProgressBar(percent: number | undefined, width: number): ProgressBarSegment[] {
+  if (width < 4) return [{ text: "░".repeat(width), filled: false }]
+  const hasValue = percent !== undefined && !Number.isNaN(percent)
+  const pctText = hasValue ? `${Math.round(percent)}%`.padStart(4) : ""
+  const labelStart = Math.max(0, Math.floor((width - pctText.length) / 2))
+  const filledCount = hasValue ? Math.round((percent / 100) * width) : 0
+
+  let bar = ""
+  for (let i = 0; i < width; i++) {
+    if (pctText && i >= labelStart && i < labelStart + pctText.length) {
+      bar += pctText[i - labelStart]
+    } else if (i < filledCount) {
+      bar += "█"
+    } else {
+      bar += "░"
+    }
+  }
+  if (filledCount === 0) return [{ text: bar, filled: false }]
+  if (filledCount >= width) return [{ text: bar, filled: true }]
+  return [
+    { text: bar.slice(0, filledCount), filled: true },
+    { text: bar.slice(filledCount), filled: false },
+  ]
 }
 
 export function deriveProgress(task: { additional?: { transfer?: { size_downloaded?: number; speed_download?: number } }; size?: number }): number | undefined {

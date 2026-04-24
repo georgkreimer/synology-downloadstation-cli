@@ -23,14 +23,22 @@ describe("formatting helpers", () => {
     expect(formatPercent(99.9)).toBe("100%")
   })
 
-  test("formatProgressBar renders block characters with percentage", () => {
-    const bar = formatProgressBar(50, 10)
-    expect(bar).toContain("\u2588")
-    expect(bar).toContain("\u2591")
-    expect(bar).toContain("50%")
-    expect(formatProgressBar(undefined, 10).trim()).toBe("-")
-    expect(formatProgressBar(100, 10)).toContain("100%")
-    expect(formatProgressBar(0, 10)).toContain("0%")
+  test("formatProgressBar renders segments with percentage", () => {
+    const segments = formatProgressBar(50, 10)
+    const full = segments.map((s) => s.text).join("")
+    expect(full).toContain("50%")
+    expect(full).toHaveLength(10)
+    expect(segments.some((s) => s.filled)).toBe(true)
+    expect(segments.some((s) => !s.filled)).toBe(true)
+
+    const empty = formatProgressBar(undefined, 10)
+    expect(empty).toHaveLength(1)
+    expect(empty[0].filled).toBe(false)
+
+    const done = formatProgressBar(100, 10)
+    expect(done.map((s) => s.text).join("")).toContain("100%")
+    expect(done).toHaveLength(1)
+    expect(done[0].filled).toBe(true)
   })
 
   test("deriveProgress returns bounded percentage", () => {
