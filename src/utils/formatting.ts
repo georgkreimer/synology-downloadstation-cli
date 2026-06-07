@@ -23,38 +23,38 @@ export function formatPercent(percent?: number): string {
 
 export interface ProgressBarSegment {
   text: string
-  filled: boolean
+  role: "filled" | "track" | "label"
 }
 
 export function formatProgressBar(percent: number | undefined, width: number): ProgressBarSegment[] {
-  if (width < 4) return [{ text: "░".repeat(width), filled: false }]
+  if (width <= 0) return []
   const hasValue = percent !== undefined && !Number.isNaN(percent)
-  const pctText = hasValue ? `${Math.round(percent)}%`.padStart(4) : ""
-  const labelStart = Math.max(0, Math.floor((width - pctText.length) / 2))
-  const filledCount = hasValue ? Math.round((percent / 100) * width) : 0
+  const normalized = hasValue ? Math.min(100, Math.max(0, percent)) : undefined
+  const label = normalized === undefined ? "  --" : `${Math.round(normalized)}%`.padStart(4)
 
-  let bar = ""
-  for (let i = 0; i < width; i++) {
-    if (pctText && i >= labelStart && i < labelStart + pctText.length) {
-      bar += pctText[i - labelStart]
-    } else if (i < filledCount) {
-      bar += "█"
-    } else {
-      bar += "░"
-    }
+  if (width <= label.length) {
+    return [{ text: label.slice(-width), role: "label" }]
   }
-  if (filledCount === 0) return [{ text: bar, filled: false }]
-  if (filledCount >= width) return [{ text: bar, filled: true }]
-  return [
-    { text: bar.slice(0, filledCount), filled: true },
-    { text: bar.slice(filledCount), filled: false },
-  ]
+
+  const gap = 1
+  const barWidth = Math.max(0, width - label.length - gap)
+  const filledCount = normalized === undefined ? 0 : Math.round((normalized / 100) * barWidth)
+  const segments: ProgressBarSegment[] = []
+  if (filledCount > 0) {
+    segments.push({ text: "█".repeat(filledCount), role: "filled" })
+  }
+  if (filledCount < barWidth) {
+    segments.push({ text: "░".repeat(barWidth - filledCount), role: "track" })
+  }
+  segments.push({ text: " ", role: "track" })
+  segments.push({ text: label, role: "label" })
+  return segments
 }
 
 export function deriveProgress(task: { additional?: { transfer?: { size_downloaded?: number; speed_download?: number } }; size?: number }): number | undefined {
   const total = task.size ?? 0
   const downloaded = task.additional?.transfer?.size_downloaded ?? 0
-  if (total <= 0 || downloaded <= 0) return undefined
+  if (total <= 0 || downloaded < 0) return undefined
   const ratio = (downloaded / total) * 100
   if (!Number.isFinite(ratio)) return undefined
   return Math.min(100, Math.max(0, ratio))

@@ -3,8 +3,8 @@ import { startRelay, type RelayOptions } from "../relay"
 import { SynologyClient, SynologyRequestError } from "../SynologyClient"
 
 const originalFetch = globalThis.fetch
-const TEST_PORT = 19787
 const SAFARI_ORIGIN = "safari-web-extension://ABC123-DEF456"
+let server: ReturnType<typeof startRelay> | undefined
 
 function makeMockClient() {
   return {
@@ -20,7 +20,7 @@ function makeOptions(overrides: Partial<RelayOptions> = {}): RelayOptions {
   return {
     client: makeMockClient(),
     host: "https://nas.local:5001",
-    port: TEST_PORT,
+    port: 0,
     refreshSession: mock(async () => {}),
     resolveDestination: mock(() => "/volume1/downloads" as string | undefined),
     ...overrides,
@@ -28,7 +28,8 @@ function makeOptions(overrides: Partial<RelayOptions> = {}): RelayOptions {
 }
 
 async function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
-  return originalFetch(`http://127.0.0.1:${TEST_PORT}${path}`, {
+  if (!server) throw new Error("Test relay server is not running.")
+  return originalFetch(`http://127.0.0.1:${server.port}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: SAFARI_ORIGIN, ...headers },
     body: JSON.stringify(body),
@@ -36,10 +37,9 @@ async function post(path: string, body: unknown, headers: Record<string, string>
 }
 
 describe("relay", () => {
-  let server: ReturnType<typeof startRelay>
-
   afterEach(() => {
     server?.stop(true)
+    server = undefined
   })
 
   test("POST /add with valid http URL returns ok", async () => {
@@ -102,7 +102,7 @@ describe("relay", () => {
     expect(json.error).toContain("url")
   })
 
-  test("POST /add with NAS error returns 500", async () => {
+  test("POST /add with missing destination returns 409 setup guidance", async () => {
     const client = makeMockClient()
     ;(client.createTaskFromUrl as ReturnType<typeof mock>).mockImplementation(async () => {
       throw new SynologyRequestError("Failed to create task.", 120)
@@ -113,8 +113,11 @@ describe("relay", () => {
     const res = await post("/add", { url: "https://example.com/file.iso" })
     const json = await res.json()
 
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(409)
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(SAFARI_ORIGIN)
     expect(json.ok).toBe(false)
+    expect(json.error).toContain("destination required")
+    expect(json.error).toContain("Open the TUI")
   })
 
   test("session expired triggers re-auth and retry", async () => {
@@ -158,11 +161,36 @@ describe("relay", () => {
     expect(json.error).toContain("Re-authentication failed")
   })
 
+  test("missing destination after re-auth retry returns 409 setup guidance", async () => {
+    let callCount = 0
+    const client = makeMockClient()
+    ;(client.createTaskFromUrl as ReturnType<typeof mock>).mockImplementation(async () => {
+      callCount++
+      if (callCount === 1) {
+        throw new SynologyRequestError("Session expired", 119)
+      }
+      throw new SynologyRequestError("Failed to create task.", 120)
+    })
+    const refreshSession = mock(async () => {})
+    const options = makeOptions({ client, refreshSession })
+    server = startRelay(options)
+
+    const res = await post("/add", { url: "https://example.com/file.iso" })
+    const json = await res.json()
+
+    expect(res.status).toBe(409)
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(SAFARI_ORIGIN)
+    expect(json.ok).toBe(false)
+    expect(json.error).toContain("destination required")
+    expect(refreshSession).toHaveBeenCalled()
+    expect(callCount).toBe(2)
+  })
+
   test("OPTIONS preflight returns CORS headers for safari-web-extension origin", async () => {
     const options = makeOptions()
     server = startRelay(options)
 
-    const res = await originalFetch(`http://127.0.0.1:${TEST_PORT}/add`, {
+    const res = await originalFetch(`http://127.0.0.1:${server!.port}/add`, {
       method: "OPTIONS",
       headers: { Origin: SAFARI_ORIGIN },
     })
@@ -176,7 +204,7 @@ describe("relay", () => {
     const options = makeOptions()
     server = startRelay(options)
 
-    const res = await originalFetch(`http://127.0.0.1:${TEST_PORT}/add`, {
+    const res = await originalFetch(`http://127.0.0.1:${server!.port}/add`, {
       method: "OPTIONS",
       headers: { Origin: "https://evil.com" },
     })
@@ -189,7 +217,7 @@ describe("relay", () => {
     const options = makeOptions()
     server = startRelay(options)
 
-    const res = await originalFetch(`http://127.0.0.1:${TEST_PORT}/add`, {
+    const res = await originalFetch(`http://127.0.0.1:${server!.port}/add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: "https://example.com/file.iso" }),
@@ -217,7 +245,7 @@ describe("relay", () => {
     const options = makeOptions()
     server = startRelay(options)
 
-    const res = await originalFetch(`http://127.0.0.1:${TEST_PORT}/add`)
+    const res = await originalFetch(`http://127.0.0.1:${server!.port}/add`)
 
     expect(res.status).toBe(404)
   })

@@ -9,15 +9,18 @@ export interface SessionState {
 
 type SessionStoreData = Record<string, SessionState>
 
-const SESSION_FILE = getConfigPath("sessions.json")
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
+function sessionFile(): string {
+  return getConfigPath("sessions.json")
+}
+
 function loadAll(): SessionStoreData {
-  return readJSONFile<SessionStoreData>(SESSION_FILE) ?? {}
+  return readJSONFile<SessionStoreData>(sessionFile()) ?? {}
 }
 
 function persist(store: SessionStoreData) {
-  writeJSONFile(SESSION_FILE, store)
+  writeJSONFile(sessionFile(), store)
 }
 
 function keyFor(host: string): string {

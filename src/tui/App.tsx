@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { TextareaRenderable, ScrollBoxRenderable } from "@opentui/core"
 import type { Task } from "../types/synology"
-import { SynologyClient, SynologyRequestError } from "../services/SynologyClient"
+import { SynologyClient, SynologyRequestError, isDestinationRequired } from "../services/SynologyClient"
 import { formatBytes, formatProgressBar, formatSpeed, deriveProgress, type ProgressBarSegment } from "../utils/formatting"
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import stripAnsi from "strip-ansi"
@@ -74,6 +74,8 @@ interface PendingConfirm {
   taskId?: string
 }
 
+type CreatePromptMode = "urls" | "destination" | "destinationRetry"
+
 const REFRESH_INTERVAL_MS = 1000
 const STATUS_FADE_MS = 3000
 const CONFIRM_TIMEOUT_MS = 2000
@@ -105,7 +107,10 @@ export function App({
   const [lastRefresh, setLastRefresh] = useState<Date | null>(initialTasks ? new Date() : null)
   const [loading, setLoading] = useState(!initialTasks)
   const [showCreatePrompt, setShowCreatePrompt] = useState(false)
+  const [createPromptMode, setCreatePromptMode] = useState<CreatePromptMode>("urls")
+  const [pendingCreateUrls, setPendingCreateUrls] = useState<string[]>([])
   const [textareaKey, setTextareaKey] = useState(0)
+  const [destinationTextareaKey, setDestinationTextareaKey] = useState(0)
   const [busy, setBusy] = useState(false)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
@@ -115,6 +120,7 @@ export function App({
   const { width, height } = useTerminalDimensions()
   const fetchingRef = useRef(false)
   const textareaRef = useRef<TextareaRenderable | null>(null)
+  const destinationTextareaRef = useRef<TextareaRenderable | null>(null)
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -376,38 +382,104 @@ export function App({
   }, [client, performAction, pendingConfirm, cancelConfirm, setInfo])
 
   const getNewTaskInput = () => textareaRef.current?.plainText ?? ""
+  const getDestinationInput = () => destinationTextareaRef.current?.plainText ?? ""
   const resetNewTaskInput = () => {
     setTextareaKey((key) => key + 1)
   }
+  const resetDestinationInput = () => {
+    setDestinationTextareaKey((key) => key + 1)
+  }
 
-  const handleCreate = useCallback(async () => {
+  const resetCreatePrompt = useCallback(() => {
+    setShowCreatePrompt(false)
+    setCreatePromptMode("urls")
+    setPendingCreateUrls([])
+    resetNewTaskInput()
+    resetDestinationInput()
+  }, [])
+
+  const openCreatePrompt = useCallback(() => {
+    setCreatePromptMode("urls")
+    setPendingCreateUrls([])
+    resetNewTaskInput()
+    resetDestinationInput()
+    setShowCreatePrompt(true)
+  }, [])
+
+  const createWithDestination = useCallback(
+    async (urls: string[], destination: string, retryingDestination: boolean) => {
+      setBusy(true)
+      try {
+        await withSessionRetry(() => client.createTasksFromUrls(urls, destination))
+        if (destination && destination !== defaultDestinationRef.current) {
+          defaultDestinationRef.current = destination
+          onDestinationChange?.(destination)
+        }
+        setSuccess(urls.length > 1 ? `Created ${urls.length} tasks.` : "Task created.")
+        resetCreatePrompt()
+        await loadTasks()
+      } catch (error) {
+        if (isDestinationRequired(error)) {
+          if (retryingDestination) {
+            resetCreatePrompt()
+            setError("Synology rejected that destination (120). Reopen the new download prompt to try a different path.")
+            return
+          }
+          setPendingCreateUrls(urls)
+          setCreatePromptMode("destinationRetry")
+          resetDestinationInput()
+          setError("Synology requires a download destination.")
+          return
+        }
+        setError(formatError(error, "Failed to create task"))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [client, loadTasks, onDestinationChange, resetCreatePrompt, setError, setSuccess, withSessionRetry],
+  )
+
+  const handleUrlSubmit = useCallback(async () => {
+    if (busy) return
     const urls = splitUrls(getNewTaskInput())
     if (urls.length === 0) {
       setError("Provide at least one URL.")
       return
     }
+    setPendingCreateUrls(urls)
     setBusy(true)
     try {
-      // Resolve destination: cached > query NAS default > undefined (let API decide)
       let destination = defaultDestinationRef.current
       if (!destination) {
         destination = await withSessionRetry(() => client.getDefaultDestination()) ?? undefined
-        if (destination) {
-          defaultDestinationRef.current = destination
-          onDestinationChange?.(destination)
-        }
       }
-      await withSessionRetry(() => client.createTasksFromUrls(urls, destination))
-      setSuccess(urls.length > 1 ? `Created ${urls.length} tasks.` : "Task created.")
-      setShowCreatePrompt(false)
-      resetNewTaskInput()
-      await loadTasks()
+      if (!destination) {
+        setCreatePromptMode("destination")
+        resetDestinationInput()
+        return
+      }
+      await createWithDestination(urls, destination, false)
     } catch (error) {
       setError(formatError(error, "Failed to create task"))
     } finally {
       setBusy(false)
     }
-  }, [client, loadTasks, onDestinationChange, withSessionRetry, setError, setSuccess])
+  }, [busy, client, createWithDestination, setError, withSessionRetry])
+
+  const handleDestinationSubmit = useCallback(async () => {
+    if (busy) return
+    const destination = sanitizeDestination(getDestinationInput())
+    if (!destination) {
+      setError("Enter a download destination.")
+      return
+    }
+    if (pendingCreateUrls.length === 0) {
+      setError("Provide at least one URL.")
+      setCreatePromptMode("urls")
+      return
+    }
+    await createWithDestination(pendingCreateUrls, destination, createPromptMode === "destinationRetry")
+  }, [busy, createPromptMode, createWithDestination, pendingCreateUrls, setError])
 
   const getPageSize = useCallback((): number => {
     const vpHeight = scrollBoxRef.current?.viewport?.height
@@ -427,10 +499,13 @@ export function App({
 
     if (showCreatePrompt) {
       if (key.name === "escape") {
-        setShowCreatePrompt(false)
-        resetNewTaskInput()
+        resetCreatePrompt()
       } else if (key.name === "return" && (key.ctrl || key.meta)) {
-        void handleCreate()
+        if (createPromptMode === "urls") {
+          void handleUrlSubmit()
+        } else {
+          void handleDestinationSubmit()
+        }
       }
       return
     }
@@ -487,8 +562,7 @@ export function App({
         break
       case "n":
         cancelConfirm()
-        resetNewTaskInput()
-        setShowCreatePrompt(true)
+        openCreatePrompt()
         break
       case "escape":
         setExpandedTaskId(null)
@@ -634,17 +708,38 @@ export function App({
               backgroundColor: "#181825",
             }}
           >
-            <text fg={theme.muted}>Paste one or more URLs, one per line:</text>
-            <textarea
-              key={textareaKey}
-              ref={textareaRef}
-              placeholder={"https://example.com/file.iso"}
-              wrapMode="word"
-              style={{ minHeight: 4, maxHeight: 8 }}
-              focused
-            />
+            {createPromptMode === "urls" ? (
+              <>
+                <text fg={theme.muted}>Paste one or more URLs, one per line:</text>
+                <textarea
+                  key={textareaKey}
+                  ref={textareaRef}
+                  placeholder={"https://example.com/file.iso"}
+                  wrapMode="word"
+                  style={{ minHeight: 4, maxHeight: 8 }}
+                  focused
+                />
+              </>
+            ) : (
+              <>
+                <text fg={theme.muted}>
+                  {createPromptMode === "destinationRetry"
+                    ? "Synology still requires a valid destination:"
+                    : "Enter the Synology destination path:"}
+                </text>
+                <text fg={theme.emptyState}>{`${pendingCreateUrls.length} pending URL${pendingCreateUrls.length === 1 ? "" : "s"}`}</text>
+                <textarea
+                  key={destinationTextareaKey}
+                  ref={destinationTextareaRef}
+                  placeholder={"/volume1/downloads"}
+                  wrapMode="word"
+                  style={{ minHeight: 1, maxHeight: 2 }}
+                  focused
+                />
+              </>
+            )}
             <text>
-              <span fg={theme.keyhint.key}>Ctrl+⏎</span><span fg={theme.keyhint.label}> create  </span>
+              <span fg={theme.keyhint.key}>Ctrl+⏎</span><span fg={theme.keyhint.label}>{createPromptMode === "urls" ? " create  " : " save  "}</span>
               <span fg={theme.keyhint.key}>Esc</span><span fg={theme.keyhint.label}> cancel</span>
             </text>
           </box>
@@ -700,28 +795,34 @@ function renderRow(task: Task, widths: ColumnWidths, isSelected: boolean, isErro
   const glyph = task.status >= 101 ? "✗" : (STATUS_GLYPHS[task.status] ?? "·")
   const glyphColor = isSelected ? undefined : (isError ? theme.status.error : getStatusColor(task.status))
   const progressSegments = formatProgressBar(progress, widths.progress)
+  const progressColor = getStatusColor(task.status)
 
   return (
     <>
       <span fg={glyphColor}>{`${glyph} `}</span>
       <span fg={isSelected ? undefined : (isError ? theme.status.error : theme.row.title)}>{`${truncate(task.title, widths.title)} `}</span>
-      {renderProgressSegments(progressSegments, isSelected, isError)}
+      {renderProgressSegments(progressSegments, isSelected, isError, progressColor)}
       <span fg={isSelected ? undefined : (isError ? theme.status.error : theme.row.speed)}>{` ${padStart(formatSpeed(transfer?.speed_download || transfer?.speed_upload), widths.speed)}`}</span>
       <span fg={isSelected ? undefined : (isError ? theme.status.error : theme.row.size)}>{` ${padStart(formatBytes(task.size), widths.size)}`}</span>
     </>
   )
 }
 
-function renderProgressSegments(segments: ProgressBarSegment[], isSelected: boolean, isError: boolean) {
-  if (isSelected || isError) {
-    const text = segments.map((s) => s.text).join("")
-    return <span fg={isError ? theme.status.error : undefined}>{text}</span>
-  }
+function renderProgressSegments(segments: ProgressBarSegment[], isSelected: boolean, isError: boolean, progressColor: string) {
   return segments.map((segment, i) => (
     <span
       key={i}
-      fg={segment.filled ? theme.progress.filledFg : theme.progress.trackFg}
-      bg={segment.filled ? theme.progress.filledBg : theme.progress.trackBg}
+      fg={
+        isError
+          ? theme.status.error
+          : segment.role === "filled"
+            ? progressColor
+            : segment.role === "label" && isSelected
+              ? theme.row.selectedFg
+              : segment.role === "label"
+                ? theme.muted
+                : theme.progress.trackFg
+      }
     >
       {segment.text}
     </span>
@@ -784,4 +885,8 @@ function splitUrls(input: string): string[] {
 
 function sanitizeInput(value: string): string {
   return stripAnsi(value).replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000B-\u001F\u007F\u200B\uFEFF\u202A-\u202E\u2066-\u2069]/g, "")
+}
+
+function sanitizeDestination(value: string): string {
+  return sanitizeInput(value).trim()
 }

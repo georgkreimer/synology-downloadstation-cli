@@ -29,7 +29,7 @@
   Interactive username/password prompts or seamless 1Password CLI integration (username, password, and TOTP pulled directly from `op`).
 
 - **Session persistence**  
-  Cached SID + destination stored per host under `~/.config/synology-ds/sessions.json`. The last known destination is reused to avoid Synology’s “120” errors without nagging for a path.
+  Cached SID + destination stored per host under `~/.config/synology-ds/sessions.json`. The last known destination is reused to avoid Synology’s “120” errors, and the TUI prompts for a destination when none is known.
 
 - **Secure by default**  
   No credentials are written to disk; only SID, username, and destination are cached. TLS verification stays enabled unless `--insecure` is explicitly passed.
@@ -182,7 +182,7 @@ Paste support accepts bracketed paste sequences (cmd+V) and strips ANSI/control 
   Per-host record containing SID, username, and last-known download destination. Credentials are *never* written to disk. Delete this file or use `--no-session-cache` if you need a cold start.
 
 - **Destination caching**  
-  Whenever the Download Station API returns a `detail.destination`, we persist it so subsequent `create` requests succeed without reprompting. If the NAS has never reported a destination, the CLI will reprompt before scheduling the first task.
+  Whenever the Download Station API returns a `detail.destination`, we persist it so subsequent `create` requests succeed without reprompting. If the NAS has never reported a destination, the TUI asks for one before scheduling the task and caches it after a successful create. The headless relay cannot prompt; if it cannot infer a destination, open the TUI and create a download once to set the path.
 
 ---
 
@@ -220,7 +220,7 @@ Keep TypeScript strict mode happy, prefer async/await, and add comments only for
   Try `--insecure` temporarily, or import your NAS certificate into the macOS trust store.
 
 - **`Failed to create task. (120)`**  
-  Indicates the NAS expects a destination path. The CLI now reuses the last known destination automatically; if you still see this, clear `sessions.json` and let the TUI capture a fresh destination from an existing task.
+  Indicates the NAS expects a destination path. In the TUI, enter the destination path when prompted; if Synology rejects the path, the prompt lets you retry once. In relay/Safari flows, open the TUI and create a download once so the destination can be cached.
 
 - **Paste doesn’t work**  
   Ensure you’re in the “new task” prompt (`n`). We intercept bracketed paste events only while the prompt is focused.

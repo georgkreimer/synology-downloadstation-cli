@@ -26,19 +26,19 @@ describe("formatting helpers", () => {
   test("formatProgressBar renders segments with percentage", () => {
     const segments = formatProgressBar(50, 10)
     const full = segments.map((s) => s.text).join("")
-    expect(full).toContain("50%")
+    expect(full).toBe("███░░  50%")
     expect(full).toHaveLength(10)
-    expect(segments.some((s) => s.filled)).toBe(true)
-    expect(segments.some((s) => !s.filled)).toBe(true)
+    expect(segments.some((s) => s.role === "filled")).toBe(true)
+    expect(segments.some((s) => s.role === "track")).toBe(true)
+    expect(segments.at(-1)?.role).toBe("label")
 
     const empty = formatProgressBar(undefined, 10)
-    expect(empty).toHaveLength(1)
-    expect(empty[0].filled).toBe(false)
+    expect(empty.map((s) => s.text).join("")).toBe("░░░░░   --")
+    expect(empty.some((s) => s.role === "filled")).toBe(false)
 
     const done = formatProgressBar(100, 10)
-    expect(done.map((s) => s.text).join("")).toContain("100%")
-    expect(done).toHaveLength(1)
-    expect(done[0].filled).toBe(true)
+    expect(done.map((s) => s.text).join("")).toBe("█████ 100%")
+    expect(done.some((s) => s.role === "filled")).toBe(true)
   })
 
   test("deriveProgress returns bounded percentage", () => {
@@ -49,5 +49,7 @@ describe("formatting helpers", () => {
       },
     })
     expect(progress).toBe(75)
+    expect(deriveProgress({ size: 1_000, additional: { transfer: { size_downloaded: 0 } } })).toBe(0)
+    expect(deriveProgress({ size: 1_000, additional: { transfer: { size_downloaded: 1_250 } } })).toBe(100)
   })
 })
