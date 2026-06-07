@@ -8,14 +8,16 @@
 
 - [Features](#features)
 - [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Global Install](#global-install)
+- [Install](#install)
+- [First Run](#first-run)
+- [Updating](#updating)
+- [Uninstalling](#uninstalling)
 - [Safari Extension](#safari-extension)
 - [Serve (Headless Relay)](#serve-headless-relay)
 - [CLI Flags & Environment](#cli-flags--environment)
 - [TUI Controls](#tui-controls)
 - [Configuration & Sessions](#configuration--sessions)
-- [Development Workflow](#development-workflow)
+- [For Developers](#for-developers)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -40,64 +42,128 @@
 - **Built-in HTTP relay**  
   The TUI automatically starts a localhost relay on port 19786 so the Safari extension can talk to Download Station. A standalone `serve` subcommand is available for headless setups.
 
-- **Modern toolchain**  
-  Bun 1.2.x runtime, TypeScript strict mode, and a single `bun run build` output (`dist/index.js`) with a baked-in `#!/usr/bin/env bun` shebang.
+- **Simple local install**  
+  Build once, link the `synology-ds` command, and run it from any terminal.
 
 ---
 
 ## Prerequisites
 
-- macOS (Apple Silicon or Intel) with the latest Xcode Command Line Tools.
-- [Bun 1.2.x](https://bun.sh/) (see `.tool-versions` for the pinned version).
-- Optional: [1Password CLI](https://developer.1password.com/docs/cli) signed in via `eval "$(op signin)"`.
-- Optional: [Zig](https://ziglang.org) only if you plan to hack on OpenTUI itself (pre-built artifacts are bundled).
+- A Synology NAS with **Download Station** installed and enabled.
+- A DSM URL you can reach from this machine, such as `https://nas.local:5001`.
+- A DSM user that is allowed to use Download Station.
+- [Git](https://git-scm.com/) for downloading and updating this repository.
+- [Bun](https://bun.com/docs/installation) 1.2.x or newer.
+- Optional: [1Password CLI](https://developer.1password.com/docs/cli) if you want `synology-ds` to read your DSM username, password, and TOTP from 1Password.
 
-Install dependencies once:
+Install Bun if you do not already have it:
 
 ```bash
-bun install
+curl -fsSL https://bun.com/install | bash
+```
+
+After installing Bun, restart your terminal or run the shell setup line printed by the installer. Check that it works:
+
+```bash
+bun --version
 ```
 
 ---
 
-## Quick Start
+## Install
+
+`synology-ds` is currently installed from this GitHub repository. You do not need to work on the project or run the development server.
 
 ```bash
-# Run straight from sources with live reload semantics
-bun run dev
+git clone https://github.com/georgkreimer/synology-downloadstation-cli.git
+cd synology-downloadstation-cli
 
-# Produce a distributable binary w/ Bun shebang in dist/
+bun install --frozen-lockfile
 bun run build
-
-# Execute the compiled artifact
-bun run start          # or: ./dist/index.js --host ...
+bun link --global
 ```
 
-First launch walks through onboarding:
+Verify the command is available:
+
+```bash
+synology-ds --help
+```
+
+If your shell says `synology-ds: command not found`, make sure Bun's bin directory is on your `PATH`:
+
+```bash
+echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.zshrc
+exec zsh
+```
+
+Then try `synology-ds --help` again.
+
+---
+
+## First Run
+
+Launch the TUI:
+
+```bash
+synology-ds
+```
+
+The first launch walks through setup:
+
 1. Host / URL (defaults to https:// if no scheme supplied)
-2. Self-signed TLS preference
-3. Optional 1Password item + vault (if `op` is available)
+2. Whether to allow a self-signed NAS certificate
+3. Optional 1Password item and vault
 
 Settings are written to `~/.config/synology-ds/config.json`, and can be edited by hand if necessary.
 
----
-
-## Global Install
-
-Build once and link globally so `synology-ds` is available everywhere:
+If you use 1Password, sign in before starting the app:
 
 ```bash
-bun run build
-bun link
+eval "$(op signin)"
+synology-ds --op-item "NAS Download Station"
 ```
 
-After linking, run `synology-ds` from any terminal. The TUI and the Safari extension relay both start together — no separate processes needed.
+---
+
+## Updating
+
+From the checkout you installed:
+
+```bash
+cd synology-downloadstation-cli
+git pull
+bun install --frozen-lockfile
+bun run build
+```
+
+The global command points at this checkout, so rebuilding is enough.
+
+---
+
+## Uninstalling
+
+Remove the global command and delete the checkout:
+
+```bash
+cd synology-downloadstation-cli
+bun unlink
+cd ..
+rm -rf synology-downloadstation-cli
+```
+
+To remove saved `synology-ds` settings and sessions too:
+
+```bash
+rm -rf ~/.config/synology-ds
+```
 
 ---
 
 ## Safari Extension
 
 A Safari Web Extension that adds "Send link to NAS" and "Send selected links to NAS" to the right-click context menu. Links are forwarded to Download Station through the built-in localhost relay.
+
+This part is macOS-only and requires Xcode because Safari extensions must be wrapped in a local Xcode app.
 
 ### Setup
 
@@ -167,7 +233,7 @@ Environment variables such as `SYNOLOGY_URL`, `SYNOLOGY_OP_ITEM`, etc., can be a
 - `s` — toggle sort by name  
 - `r` — manual refresh (auto refresh already runs every ~1 s)  
 - `q` — quit the TUI
-- Paste multiple URLs separated by whitespace/newlines into the new-task prompt and press `Option+Enter` to queue them all at once.
+- Paste multiple URLs separated by whitespace/newlines into the new-task prompt and press `Ctrl+Enter` or `Command+Enter` to queue them all at once.
 
 Paste support accepts bracketed paste sequences (cmd+V) and strips ANSI/control characters before inserting into the URL prompt.
 
@@ -186,7 +252,9 @@ Paste support accepts bracketed paste sequences (cmd+V) and strips ANSI/control 
 
 ---
 
-## Development Workflow
+## For Developers
+
+Normal users should use the [Install](#install) steps above. These commands are for people changing the code.
 
 | Task | Command |
 |------|---------|
@@ -213,6 +281,9 @@ Keep TypeScript strict mode happy, prefer async/await, and add comments only for
 
 ## Troubleshooting
 
+- **`bun: command not found` or `synology-ds: command not found`**  
+  Restart your terminal. If it still fails, add Bun's bin directory to your shell: `echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.zshrc && exec zsh`.
+
 - **`op: command not found`**  
   Install the 1Password CLI and re-run `eval "$(op signin)"`.
 
@@ -228,4 +299,4 @@ Keep TypeScript strict mode happy, prefer async/await, and add comments only for
 - **Session expired**  
   1Password users reauthenticate automatically. Manual logins will be reprompted inline rather than forcing a restart.
 
-Need help? File an issue or run the CLI with `bun run dev --help` for the exhaustive flag list. Happy downloading!
+Need help? File an issue or run `synology-ds --help` for the exhaustive flag list.
