@@ -1,6 +1,6 @@
 {
   "name": "synology-downloadstation-cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A React-powered OpenTUI client for Synology Download Station",
   "type": "module",
   "license": "MIT",
@@ -17,6 +17,9 @@
   },
   "files": [
     "dist",
+    "docs/development.md",
+    "docs/release.md",
+    "docs/safari-extension.md",
     "extension",
     "README.md",
     "LICENSE"
