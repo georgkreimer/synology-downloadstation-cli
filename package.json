@@ -1,15 +1,34 @@
 {
   "name": "synology-downloadstation-cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A React-powered OpenTUI client for Synology Download Station",
   "type": "module",
-  "bin": {
-    "synology-ds": "./dist/index.js"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/georgkreimer/synology-downloadstation-cli.git"
   },
+  "homepage": "https://github.com/georgkreimer/synology-downloadstation-cli#readme",
+  "bugs": {
+    "url": "https://github.com/georgkreimer/synology-downloadstation-cli/issues"
+  },
+  "bin": {
+    "synology-ds": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "docs/development.md",
+    "docs/release.md",
+    "docs/safari-extension.md",
+    "extension",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "bun run src/index.tsx",
     "build": "rm -rf dist && bun build src/index.tsx --outdir dist --target bun --minify && chmod +x dist/index.js",
     "lint": "bunx tsc --noEmit",
+    "prepack": "bun run build",
     "start": "bun run dist/index.js",
     "test": "bun test"
   },
