@@ -18,6 +18,7 @@
 - [TUI Controls](#tui-controls)
 - [Configuration & Sessions](#configuration--sessions)
 - [For Developers](#for-developers)
+- [Release Checklist](#release-checklist)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -270,6 +271,37 @@ src/
 ```
 
 Keep TypeScript strict mode happy, prefer async/await, and add comments only for non-obvious logic (e.g., destination caching rationale).
+
+---
+
+## Release Checklist
+
+For maintainers publishing a new version:
+
+1. Update `version` in `package.json`.
+2. Run the release checks:
+   ```bash
+   bunx tsc --noEmit
+   bun test
+   bun pm pack --dry-run
+   ```
+3. Confirm the dry-run package includes `dist/index.js`, the tree-sitter assets in `dist/`, `README.md`, `LICENSE`, and the Safari extension files.
+4. Publish to npm:
+   ```bash
+   bun publish --access public
+   ```
+5. Tag the release and push the tag:
+   ```bash
+   git tag v$(bun -e 'console.log(require("./package.json").version)')
+   git push origin --tags
+   ```
+6. Create a GitHub release from the pushed tag with the validation commands and user-facing changes.
+
+After publishing, users can install or update with:
+
+```bash
+bun install --global synology-downloadstation-cli@latest
+```
 
 ---
 
