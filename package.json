@@ -13,7 +13,7 @@
     "url": "https://github.com/georgkreimer/synology-downloadstation-cli/issues"
   },
   "bin": {
-    "synology-ds": "./dist/index.js"
+    "synology-ds": "dist/index.js"
   },
   "files": [
     "dist",

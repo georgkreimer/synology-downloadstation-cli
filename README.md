@@ -290,6 +290,10 @@ For maintainers publishing a new version:
    ```bash
    bun publish --access public
    ```
+   If npm requires an OTP and the account uses passkeys instead of authenticator codes, create a granular npm access token with **Bypass two-factor authentication** enabled, then publish with `NPM_CONFIG_TOKEN` set for that shell:
+   ```bash
+   NPM_CONFIG_TOKEN=<npm-token> bun publish --access public
+   ```
 5. Tag the release and push the tag:
    ```bash
    git tag v$(bun -e 'console.log(require("./package.json").version)')
