@@ -10,6 +10,10 @@ export class SynologyRequestError extends Error {
   }
 }
 
+export function isDestinationRequired(error: unknown): error is SynologyRequestError {
+  return error instanceof SynologyRequestError && error.code === 120
+}
+
 export interface SynologyClientOptions {
   host: string
   allowInsecure?: boolean

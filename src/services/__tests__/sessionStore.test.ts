@@ -5,6 +5,7 @@ import os from "node:os"
 
 const tmpDir = path.join(os.tmpdir(), `synology-ds-test-${Date.now()}`)
 fs.mkdirSync(tmpDir, { recursive: true })
+process.env.SYNOLOGY_DS_CONFIG_DIR = tmpDir
 
 mock.module("../../utils/fs", () => ({
   getConfigPath: (fileName: string) => path.join(tmpDir, fileName),
@@ -39,6 +40,7 @@ describe("sessionStore", () => {
   })
 
   afterAll(() => {
+    delete process.env.SYNOLOGY_DS_CONFIG_DIR
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 

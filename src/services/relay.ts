@@ -1,4 +1,4 @@
-import { SynologyClient, SynologyRequestError, isDownloadUrl } from "./SynologyClient"
+import { SynologyClient, SynologyRequestError, isDestinationRequired, isDownloadUrl } from "./SynologyClient"
 
 export interface RelayServer {
   readonly port: number
@@ -14,6 +14,8 @@ export interface RelayOptions {
 }
 
 const MAX_BODY_SIZE = 65_536
+const DESTINATION_REQUIRED_MESSAGE =
+  "Download destination required. Open the TUI and enter a destination path before using the Safari extension."
 
 function corsHeaders(origin: string): Record<string, string> {
   return {
@@ -39,6 +41,10 @@ function extractFilename(url: string): string | undefined {
 
 function isAddBody(value: unknown): value is { url: string } {
   return typeof value === "object" && value !== null && "url" in value && typeof (value as { url: unknown }).url === "string"
+}
+
+function destinationRequiredResponse(headers: Record<string, string>): Response {
+  return Response.json({ ok: false, error: DESTINATION_REQUIRED_MESSAGE }, { status: 409, headers })
 }
 
 async function handleAdd(
@@ -104,6 +110,10 @@ async function handleAdd(
     await options.client.createTaskFromUrl(url, destination)
     return Response.json(successBody, { headers })
   } catch (error) {
+    if (isDestinationRequired(error)) {
+      return destinationRequiredResponse(headers)
+    }
+
     if (error instanceof SynologyRequestError && error.code === 119) {
       try {
         await refreshWithCoalescing()
@@ -120,6 +130,10 @@ async function handleAdd(
         await options.client.createTaskFromUrl(url, destination)
         return Response.json(successBody, { headers })
       } catch (retryError) {
+        if (isDestinationRequired(retryError)) {
+          return destinationRequiredResponse(headers)
+        }
+
         const message = retryError instanceof Error ? retryError.message : "Unknown error"
         return Response.json({ ok: false, error: message }, { status: 502, headers })
       }

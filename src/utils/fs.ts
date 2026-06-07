@@ -2,9 +2,12 @@ import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
 
-const CONFIG_DIR = path.join(os.homedir(), ".config", "synology-ds")
+function configDir(): string {
+  return process.env.SYNOLOGY_DS_CONFIG_DIR ?? path.join(os.homedir(), ".config", "synology-ds")
+}
 
 export function ensureConfigDir(): string {
+  const CONFIG_DIR = configDir()
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 })
   }
