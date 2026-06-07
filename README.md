@@ -42,8 +42,8 @@
 - **Built-in HTTP relay**  
   The TUI automatically starts a localhost relay on port 19786 so the Safari extension can talk to Download Station. A standalone `serve` subcommand is available for headless setups.
 
-- **Simple local install**  
-  Build once, link the `synology-ds` command, and run it from any terminal.
+- **Simple global install**  
+  Install the `synology-ds` command once and run it from any terminal.
 
 ---
 
@@ -52,7 +52,6 @@
 - A Synology NAS with **Download Station** installed and enabled.
 - A DSM URL you can reach from this machine, such as `https://nas.local:5001`.
 - A DSM user that is allowed to use Download Station.
-- [Git](https://git-scm.com/) for downloading and updating this repository.
 - [Bun](https://bun.com/docs/installation) 1.2.x or newer.
 - Optional: [1Password CLI](https://developer.1password.com/docs/cli) if you want `synology-ds` to read your DSM username, password, and TOTP from 1Password.
 
@@ -72,15 +71,10 @@ bun --version
 
 ## Install
 
-`synology-ds` is currently installed from this GitHub repository. You do not need to work on the project or run the development server.
+Install the CLI globally:
 
 ```bash
-git clone https://github.com/georgkreimer/synology-downloadstation-cli.git
-cd synology-downloadstation-cli
-
-bun install --frozen-lockfile
-bun run build
-bun link --global
+bun install --global synology-downloadstation-cli
 ```
 
 Verify the command is available:
@@ -127,28 +121,20 @@ synology-ds --op-item "NAS Download Station"
 
 ## Updating
 
-From the checkout you installed:
+Install the latest published version:
 
 ```bash
-cd synology-downloadstation-cli
-git pull
-bun install --frozen-lockfile
-bun run build
+bun install --global synology-downloadstation-cli@latest
 ```
-
-The global command points at this checkout, so rebuilding is enough.
 
 ---
 
 ## Uninstalling
 
-Remove the global command and delete the checkout:
+Remove the global command:
 
 ```bash
-cd synology-downloadstation-cli
-bun unlink
-cd ..
-rm -rf synology-downloadstation-cli
+bun remove --global synology-downloadstation-cli
 ```
 
 To remove saved `synology-ds` settings and sessions too:
@@ -254,7 +240,15 @@ Paste support accepts bracketed paste sequences (cmd+V) and strips ANSI/control 
 
 ## For Developers
 
-Normal users should use the [Install](#install) steps above. These commands are for people changing the code.
+Normal users should use the [Install](#install) steps above. These commands are for people changing the code or building from source.
+
+```bash
+git clone https://github.com/georgkreimer/synology-downloadstation-cli.git
+cd synology-downloadstation-cli
+bun install --frozen-lockfile
+bun run build
+./dist/index.js --help
+```
 
 | Task | Command |
 |------|---------|
