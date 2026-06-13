@@ -15,10 +15,13 @@ For maintainers publishing a new version.
 
 3. Confirm the dry-run package includes:
    - `dist/index.js`
-   - tree-sitter assets in `dist/`
    - `README.md`
    - `LICENSE`
    - Safari extension files
+
+   `dist/index.js` should keep package imports external. Native-backed dependencies such as
+   `@opentui/core` must be resolved from the user's installed `node_modules` so the JavaScript
+   bindings and platform dylib stay version-aligned.
 
 ## Publish to npm
 

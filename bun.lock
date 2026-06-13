@@ -4,8 +4,8 @@
     "": {
       "name": "synology-downloadstation-cli",
       "dependencies": {
-        "@opentui/core": "^0.1.97",
-        "@opentui/react": "^0.1.97",
+        "@opentui/core": "0.1.97",
+        "@opentui/react": "0.1.97",
         "commander": "^12.1.0",
         "react": "^19.2.0",
         "strip-ansi": "^7.1.0",

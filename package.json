@@ -1,6 +1,6 @@
 {
   "name": "synology-downloadstation-cli",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A React-powered OpenTUI client for Synology Download Station",
   "type": "module",
   "license": "MIT",
@@ -26,7 +26,7 @@
   ],
   "scripts": {
     "dev": "bun run src/index.tsx",
-    "build": "rm -rf dist && bun build src/index.tsx --outdir dist --target bun --minify && chmod +x dist/index.js",
+    "build": "rm -rf dist && bun build src/index.tsx --outdir dist --target bun --minify --packages external && chmod +x dist/index.js",
     "lint": "bunx tsc --noEmit",
     "prepack": "bun run build",
     "start": "bun run dist/index.js",
@@ -34,8 +34,8 @@
   },
   "packageManager": "bun@1.2.17",
   "dependencies": {
-    "@opentui/core": "^0.1.97",
-    "@opentui/react": "^0.1.97",
+    "@opentui/core": "0.1.97",
+    "@opentui/react": "0.1.97",
     "commander": "^12.1.0",
     "react": "^19.2.0",
     "strip-ansi": "^7.1.0",
